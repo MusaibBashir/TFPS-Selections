@@ -82,7 +82,7 @@ export default function Login() {
         {step === "otp" && (
           <form onSubmit={verifyCode} className="card p-6 space-y-4">
             <p className="text-sm">Hey <span className="text-gold">{member.name}</span> — we sent a code to <span className="text-cream">{maskEmail(member.email)}</span>.</p>
-            <input className="input text-center text-2xl tracking-[0.5em]" inputMode="numeric" maxLength={6} placeholder="••••••" value={code} onChange={(e) => setCode(e.target.value)} />
+            <input className="input text-center text-2xl tracking-[0.35em]" inputMode="numeric" maxLength={10} placeholder="••••••••" value={code} onChange={(e) => setCode(e.target.value)} />
             {error && <p className="text-red text-sm">{error}</p>}
             <button className="btn-gold w-full" disabled={busy || code.trim().length < 6}>{busy ? "Verifying…" : "Verify"}</button>
             <button type="button" className="text-muted text-xs hover:text-gold w-full" onClick={() => { setStep("password"); setError(""); }}>
