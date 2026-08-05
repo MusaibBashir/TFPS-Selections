@@ -13,7 +13,7 @@ function fmtDur(ms) {
 function MembersInner() {
   const [members, setMembers] = useState([]);
   const [stats, setStats] = useState({});
-  const [draft, setDraft] = useState({ roll_no: "", name: "", domains: [] });
+  const [draft, setDraft] = useState({ roll_no: "", name: "", email: "", domains: [] });
   const [editing, setEditing] = useState(null); // roll_no being edited
   const [edit, setEdit] = useState({ email: "", domains: [] });
   const [error, setError] = useState("");
@@ -41,12 +41,20 @@ function MembersInner() {
   async function add(e) {
     e.preventDefault();
     setError("");
-    if (!draft.roll_no.trim() || !draft.name.trim()) return setError("Roll number and name required.");
+    if (!draft.roll_no.trim() || !draft.name.trim() || !draft.email.trim()) return setError("Roll number, name and email are all required.");
+    const name = draft.name.trim();
+    const email = draft.email.trim().toLowerCase();
+    // block duplicates by name or email (old imports may exist under a different username)
+    const dupe = members.find((m) =>
+      m.name.trim().toLowerCase() === name.toLowerCase() ||
+      (m.email && m.email.toLowerCase() === email)
+    );
+    if (dupe) return setError(`Already exists as "${dupe.name}" (${dupe.roll_no}) — edit that entry instead of adding a new one.`);
     const { error: err } = await supabase.from("members").insert({
-      ...draft, roll_no: draft.roll_no.trim().toUpperCase(), name: draft.name.trim()
+      roll_no: draft.roll_no.trim().toUpperCase(), name, email, domains: draft.domains
     });
     if (err) return setError(err.code === "23505" ? "That roll number is already a member." : err.message);
-    setDraft({ roll_no: "", name: "", domains: [] });
+    setDraft({ roll_no: "", name: "", email: "", domains: [] });
     load();
   }
 
@@ -99,9 +107,10 @@ function MembersInner() {
       )}
 
       <form onSubmit={add} className="card p-5 mb-8 space-y-3 fade-up">
-        <div className="grid sm:grid-cols-2 gap-3">
+        <div className="grid sm:grid-cols-3 gap-3">
           <input className="input" placeholder="Roll number" value={draft.roll_no} onChange={(e) => setDraft({ ...draft, roll_no: e.target.value })} />
           <input className="input" placeholder="Name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+          <input className="input" type="email" placeholder="Email (for OTP login)" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} />
         </div>
         <div className="flex flex-wrap gap-2">
           {DOMAINS.map((d) => (
