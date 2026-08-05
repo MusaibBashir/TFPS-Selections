@@ -6,6 +6,8 @@ import { supabase, DOMAINS } from "@/lib/supabase";
 function MembersInner() {
   const [members, setMembers] = useState([]);
   const [draft, setDraft] = useState({ roll_no: "", name: "", domains: [] });
+  const [editing, setEditing] = useState(null); // roll_no being edited
+  const [edit, setEdit] = useState({ email: "", domains: [] });
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -23,6 +25,13 @@ function MembersInner() {
     });
     if (err) return setError(err.code === "23505" ? "That roll number is already a member." : err.message);
     setDraft({ roll_no: "", name: "", domains: [] });
+    load();
+  }
+
+  async function saveEdit(roll_no) {
+    await supabase.from("members").update({ email: edit.email.trim() || null, domains: edit.domains }).eq("roll_no", roll_no);
+    await supabase.from("panelists").update({ domains: edit.domains }).eq("member_roll", roll_no);
+    setEditing(null);
     load();
   }
 
@@ -62,17 +71,38 @@ function MembersInner() {
 
       <div className="card divide-y divide-edge/50">
         {members.map((m) => (
-          <div key={m.roll_no} className="flex items-center gap-3 px-5 py-3">
-            <div className="flex-1 min-w-0">
-              <p className="font-medium">{m.name} <span className="text-muted text-sm">· {m.roll_no}</span>
-                {m.is_admin && <span className="chip border-gold/40 text-gold ml-2 text-[10px]">admin</span>}
-              </p>
-              <p className="text-muted text-xs">{m.domains.join(", ") || "no domains set"}</p>
+          <div key={m.roll_no} className="px-5 py-3">
+            <div className="flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium">{m.name} <span className="text-muted text-sm">· {m.roll_no}</span>
+                  {m.is_admin && <span className="chip border-gold/40 text-gold ml-2 text-[10px]">admin</span>}
+                </p>
+                <p className="text-muted text-xs">{m.domains.join(", ") || "no domains set"} {m.email ? `· ${m.email}` : "· no email (OTP login unavailable)"}</p>
+              </div>
+              <button className="text-muted hover:text-gold text-sm"
+                onClick={() => { setEditing(editing === m.roll_no ? null : m.roll_no); setEdit({ email: m.email || "", domains: m.domains }); }}>
+                {editing === m.roll_no ? "Close" : "Edit"}
+              </button>
+              <button className="text-muted hover:text-gold text-sm" onClick={() => toggleAdmin(m)}>
+                {m.is_admin ? "Demote" : "Make admin"}
+              </button>
+              <button className="text-muted hover:text-red text-sm" onClick={() => remove(m.roll_no)}>Remove</button>
             </div>
-            <button className="text-muted hover:text-gold text-sm" onClick={() => toggleAdmin(m)}>
-              {m.is_admin ? "Demote" : "Make admin"}
-            </button>
-            <button className="text-muted hover:text-red text-sm" onClick={() => remove(m.roll_no)}>Remove</button>
+            {editing === m.roll_no && (
+              <div className="mt-3 space-y-3 fade-up">
+                <input className="input" type="email" placeholder="Email for OTP login" value={edit.email} onChange={(e) => setEdit({ ...edit, email: e.target.value })} />
+                <div className="flex flex-wrap gap-2">
+                  {DOMAINS.map((d) => (
+                    <button key={d} type="button"
+                      onClick={() => setEdit((s2) => ({ ...s2, domains: s2.domains.includes(d) ? s2.domains.filter((x) => x !== d) : [...s2.domains, d] }))}
+                      className={`chip ${edit.domains.includes(d) ? "border-gold bg-gold/15 text-gold" : "border-edge text-muted"}`}>
+                      {d}
+                    </button>
+                  ))}
+                </div>
+                <button className="btn-gold text-sm" onClick={() => saveEdit(m.roll_no)}>Save</button>
+              </div>
+            )}
           </div>
         ))}
         {members.length === 0 && <p className="px-5 py-8 text-muted italic text-center">No members yet — add the team above.</p>}

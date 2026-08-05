@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import Guard from "@/components/Guard";
-import { supabase, getSession, tagColor } from "@/lib/supabase";
+import { supabase, getSession, tagColor, DOMAINS } from "@/lib/supabase";
 
 function PanelInner() {
   const { id } = useParams();
@@ -16,6 +16,7 @@ function PanelInner() {
   const [notes, setNotes] = useState([]); // interview_feedback rows
   const [mine, setMine] = useState({ feedback: "", score: "" });
   const [saveState, setSaveState] = useState("");
+  const [editingMember, setEditingMember] = useState(null); // panelist row being edited
   const loadedFor = useRef(null);
   const [fin, setFin] = useState({ score: "", tag: "", tasks_assigned: "" });
   const [saving, setSaving] = useState(false);
@@ -59,6 +60,15 @@ function PanelInner() {
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [id, load]);
+
+  const canEditMembers = session && (session.role === "admin" || members.some((m) => m.member_roll === session.roll_no));
+
+  async function toggleMemberDomain(row, d) {
+    const next = row.domains.includes(d) ? row.domains.filter((x) => x !== d) : [...row.domains, d];
+    await supabase.from("panelists").update({ domains: next }).eq("id", row.id);
+    if (row.member_roll) await supabase.from("members").update({ domains: next }).eq("roll_no", row.member_roll);
+    load();
+  }
 
   async function startInterview(entry) {
     await supabase.from("interviews").insert({
@@ -127,10 +137,39 @@ function PanelInner() {
 
   return (
     <main className="px-4 sm:px-6 py-8 max-w-5xl mx-auto">
-      <div className="flex flex-wrap items-center gap-3 mb-6">
+      <div className="flex flex-wrap items-center gap-3 mb-2">
         <h1 className="font-display text-3xl sm:text-4xl">{panel.name}</h1>
-        <span className="chip border-edge text-muted">{members.map((m) => m.name).join(", ") || "no panelists"}</span>
       </div>
+      <div className="flex flex-wrap gap-2 mb-6">
+        {members.map((m) => (
+          <div key={m.id} className="chip border-edge text-muted gap-2">
+            <span className="text-cream">{m.name}</span>
+            <span className="text-xs">{m.domains.join(", ") || "—"}</span>
+            {canEditMembers && (
+              <button className="text-gold/70 hover:text-gold text-xs" title="Edit domains"
+                onClick={() => setEditingMember(editingMember === m.id ? null : m.id)}>✎</button>
+            )}
+          </div>
+        ))}
+        {members.length === 0 && <span className="chip border-edge text-muted">no panelists</span>}
+      </div>
+      {editingMember && (() => {
+        const row = members.find((m) => m.id === editingMember);
+        if (!row) return null;
+        return (
+          <div className="card p-4 mb-6 fade-up">
+            <p className="text-sm mb-2">Domains for <span className="text-gold">{row.name}</span> <span className="text-muted text-xs">(saves instantly)</span></p>
+            <div className="flex flex-wrap gap-2">
+              {DOMAINS.map((d) => (
+                <button key={d} type="button" onClick={() => toggleMemberDomain(row, d)}
+                  className={`chip ${row.domains.includes(d) ? "border-gold bg-gold/15 text-gold" : "border-edge text-muted"}`}>
+                  {d}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="grid lg:grid-cols-[1fr_320px] gap-6">
         <div>
