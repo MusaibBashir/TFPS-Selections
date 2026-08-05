@@ -3,16 +3,38 @@ import { useEffect, useState, useCallback } from "react";
 import Guard from "@/components/Guard";
 import { supabase, DOMAINS } from "@/lib/supabase";
 
+function fmtDur(ms) {
+  if (!ms) return "—";
+  const m = Math.round(ms / 60000);
+  if (m < 60) return `${m}m`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
 function MembersInner() {
   const [members, setMembers] = useState([]);
+  const [stats, setStats] = useState({});
   const [draft, setDraft] = useState({ roll_no: "", name: "", domains: [] });
   const [editing, setEditing] = useState(null); // roll_no being edited
   const [edit, setEdit] = useState({ email: "", domains: [] });
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
-    const { data } = await supabase.from("members").select("*").order("name");
+    const [{ data }, { data: ivs }] = await Promise.all([
+      supabase.from("members").select("*").order("name"),
+      supabase.from("interviews").select("panelist_names,started_at,ended_at").not("ended_at", "is", null)
+    ]);
     setMembers(data || []);
+    const st = {};
+    (ivs || []).forEach((iv) => {
+      const dur = new Date(iv.ended_at) - new Date(iv.started_at);
+      if (dur <= 0 || dur > 4 * 3600 * 1000) return; // ignore glitches
+      (iv.panelist_names || []).forEach((n) => {
+        if (!st[n]) st[n] = { count: 0, total: 0 };
+        st[n].count += 1;
+        st[n].total += dur;
+      });
+    });
+    setStats(st);
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -50,6 +72,31 @@ function MembersInner() {
     <main className="px-4 sm:px-6 py-8 max-w-4xl mx-auto">
       <h1 className="font-display text-3xl sm:text-4xl mb-2">Members</h1>
       <p className="text-muted mb-6">Only these roll numbers can log in as panelist or admin.</p>
+
+      {Object.keys(stats).length > 0 && (
+        <div className="card overflow-x-auto mb-8">
+          <p className="px-5 pt-4 font-display text-xl">Selection stats</p>
+          <table className="w-full text-sm mt-2">
+            <thead>
+              <tr className="text-muted text-xs uppercase tracking-wider border-b border-edge">
+                {["Member", "Interviews taken", "Time spent", "Avg interview"].map((h) => (
+                  <th key={h} className="px-5 py-2.5 text-left font-medium">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(stats).sort((a, b) => b[1].count - a[1].count).map(([name, st]) => (
+                <tr key={name} className="border-b border-edge/50">
+                  <td className="px-5 py-2.5 font-medium">{name}</td>
+                  <td className="px-5 py-2.5">{st.count}</td>
+                  <td className="px-5 py-2.5 text-muted">{fmtDur(st.total)}</td>
+                  <td className="px-5 py-2.5 text-muted">{fmtDur(st.total / st.count)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <form onSubmit={add} className="card p-5 mb-8 space-y-3 fade-up">
         <div className="grid sm:grid-cols-2 gap-3">
