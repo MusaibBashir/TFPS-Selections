@@ -8,13 +8,12 @@ export const supabase = createClient(
 export const DOMAINS = [
   "Photography",
   "Cinematography",
-  "Video Editing",
-  "Photo Editing / VFX",
-  "Direction & Screenwriting",
-  "Sound & Music",
-  "Acting",
-  "Design & Poster Making",
-  "Management & PR"
+  "Editing",
+  "VFX",
+  "Sound Design/Music",
+  "Scriptwriting",
+  "Film Analysis",
+  "Graphic Design"
 ];
 
 export const HALLS = [
