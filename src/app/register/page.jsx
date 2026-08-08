@@ -16,7 +16,21 @@ export default function Register() {
   async function submit(e) {
     e.preventDefault();
     setError("");
-    if (!form.roll_no.trim() || !form.name.trim()) return setError("Roll number and name are required.");
+    const required = [
+      ["roll_no", "Roll number"],
+      ["name", "Full name"],
+      ["email", "Email"],
+      ["phone", "Phone / WhatsApp"],
+      ["hall", "Hall of residence"],
+      ["department", "Department"],
+      ["hobbies", "Interests & hobbies"],
+      ["movie_love", "A movie you love"],
+      ["movie_hate", "A movie you hate"],
+      ["about", "Something interesting about yourself"],
+    ];
+    for (const [key, label] of required) {
+      if (!form[key].trim()) return setError(`${label} is required.`);
+    }
     if (domains.length === 0) return setError("Pick at least one domain you're interested in.");
     setState("saving");
     const { error: err } = await supabase.from("candidates").insert({
@@ -58,23 +72,23 @@ export default function Register() {
             <input className="input mt-1" placeholder="Your name" value={form.name} onChange={set("name")} />
           </div>
           <div>
-            <label className="text-sm text-muted">Email</label>
-            <input className="input mt-1" type="email" placeholder="you@kgpian.iitkgp.ac.in" value={form.email} onChange={set("email")} />
+            <label className="text-sm text-muted">Email *</label>
+            <input className="input mt-1" type="email" required placeholder="you@kgpian.iitkgp.ac.in" value={form.email} onChange={set("email")} />
           </div>
           <div>
-            <label className="text-sm text-muted">Phone / WhatsApp</label>
-            <input className="input mt-1" placeholder="+91…" value={form.phone} onChange={set("phone")} />
+            <label className="text-sm text-muted">Phone / WhatsApp *</label>
+            <input className="input mt-1" required placeholder="+91…" value={form.phone} onChange={set("phone")} />
           </div>
           <div>
-            <label className="text-sm text-muted">Hall of Residence</label>
-            <select className="input mt-1" value={form.hall} onChange={set("hall")}>
+            <label className="text-sm text-muted">Hall of Residence *</label>
+            <select className="input mt-1" required value={form.hall} onChange={set("hall")}>
               <option value="">Select hall</option>
               {HALLS.map((h) => <option key={h}>{h}</option>)}
             </select>
           </div>
           <div>
-            <label className="text-sm text-muted">Department</label>
-            <input className="input mt-1" placeholder="e.g. ECE" value={form.department} onChange={set("department")} />
+            <label className="text-sm text-muted">Department *</label>
+            <input className="input mt-1" required placeholder="e.g. ECE" value={form.department} onChange={set("department")} />
           </div>
         </div>
         <div>
@@ -89,17 +103,17 @@ export default function Register() {
           </div>
         </div>
         <div>
-          <label className="text-sm text-muted">Interests &amp; hobbies</label>
-          <input className="input mt-1" placeholder="What do you do outside academics?" value={form.hobbies} onChange={set("hobbies")} />
+          <label className="text-sm text-muted">Interests &amp; hobbies *</label>
+          <input className="input mt-1" required placeholder="What do you do outside academics?" value={form.hobbies} onChange={set("hobbies")} />
         </div>
         <div className="grid sm:grid-cols-2 gap-5">
           <div>
-            <label className="text-sm text-muted">A movie you love (and why)</label>
-            <textarea className="input mt-1 min-h-[70px]" value={form.movie_love} onChange={set("movie_love")} />
+            <label className="text-sm text-muted">A movie you love (and why) *</label>
+            <textarea className="input mt-1 min-h-[70px]" required value={form.movie_love} onChange={set("movie_love")} />
           </div>
           <div>
-            <label className="text-sm text-muted">A movie you hate (and why)</label>
-            <textarea className="input mt-1 min-h-[70px]" value={form.movie_hate} onChange={set("movie_hate")} />
+            <label className="text-sm text-muted">A movie you hate (and why) *</label>
+            <textarea className="input mt-1 min-h-[70px]" required value={form.movie_hate} onChange={set("movie_hate")} />
           </div>
         </div>
         <div>
@@ -107,8 +121,8 @@ export default function Register() {
           <textarea className="input mt-1 min-h-[70px]" value={form.about_us} onChange={set("about_us")} />
         </div>
         <div>
-          <label className="text-sm text-muted">Tell us something interesting about yourself</label>
-          <textarea className="input mt-1 min-h-[90px]" value={form.about} onChange={set("about")} />
+          <label className="text-sm text-muted">Tell us something interesting about yourself *</label>
+          <textarea className="input mt-1 min-h-[90px]" required value={form.about} onChange={set("about")} />
         </div>
         <div>
           <label className="text-sm text-muted">Anything you&apos;ve made? (portfolio / drive / insta link)</label>
