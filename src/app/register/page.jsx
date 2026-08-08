@@ -50,7 +50,16 @@ export default function Register() {
         <div className="card p-10 max-w-md text-center fade-up">
           <div className="text-5xl mb-4">🎬</div>
           <h1 className="font-display text-3xl mb-2">You&apos;re in the frame!</h1>
-          <p className="text-muted">Registration received. See you at the interviews — keep an eye on our channels for your slot.</p>
+          <p className="text-muted">Registration received. Keep an eye on our channels for your slot.</p>
+          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 mt-4 text-sm text-muted">
+            <a href="https://www.youtube.com/@TFPSIITKgp" target="_blank" rel="noopener noreferrer" className="hover:text-gold">YouTube</a>
+            <span>·</span>
+            <a href="https://www.instagram.com/tfps.iitkgp/" target="_blank" rel="noopener noreferrer" className="hover:text-gold">Instagram</a>
+            <span>·</span>
+            <a href="https://www.facebook.com/tfps.iitkgp/" target="_blank" rel="noopener noreferrer" className="hover:text-gold">Facebook</a>
+            <span>·</span>
+            <a href="mailto:tfps.iitkgp@gmail.com" className="hover:text-gold">tfps.iitkgp@gmail.com</a>
+          </div>
           <Link href="/" className="btn-ghost mt-8">Back to home</Link>
         </div>
       </main>
