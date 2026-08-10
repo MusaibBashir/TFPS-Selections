@@ -21,6 +21,15 @@ export default function Home() {
         </div>
       </div>
       <footer className="py-6 text-center text-muted text-xs">
+        <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 mb-2">
+          <a href="https://www.youtube.com/@TFPSIITKgp" target="_blank" rel="noopener noreferrer" className="hover:text-gold transition-colors">YouTube</a>
+          <span>·</span>
+          <a href="https://www.instagram.com/tfps.iitkgp/" target="_blank" rel="noopener noreferrer" className="hover:text-gold transition-colors">Instagram</a>
+          <span>·</span>
+          <a href="https://www.facebook.com/tfps.iitkgp/" target="_blank" rel="noopener noreferrer" className="hover:text-gold transition-colors">Facebook</a>
+          <span>·</span>
+          <a href="mailto:tfps.iitkgp@gmail.com" className="hover:text-gold transition-colors">tfps.iitkgp@gmail.com</a>
+        </div>
         <Link href="/login" className="hover:text-gold transition-colors">Crew Login</Link>
         <span className="mx-2">·</span> TFPS, IIT Kharagpur
       </footer>

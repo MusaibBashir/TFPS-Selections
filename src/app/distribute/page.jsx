@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import Guard from "@/components/Guard";
+import SlotPicker from "@/components/SlotPicker";
 import { supabase } from "@/lib/supabase";
 
 function DistributeInner() {
@@ -12,13 +13,17 @@ function DistributeInner() {
   const [queue, setQueue] = useState([]);
   const [candidates, setCandidates] = useState({});
   const [error, setError] = useState("");
+  const [slotted, setSlotted] = useState([]);
+  const [showSlots, setShowSlots] = useState(true);
 
   const load = useCallback(async () => {
-    const [p, m, q] = await Promise.all([
+    const [p, m, q, sl] = await Promise.all([
       supabase.from("panels").select("*").order("created_at"),
       supabase.from("panelists").select("*"),
-      supabase.from("queue_entries").select("*").in("status", ["waiting", "in_interview"]).order("position")
+      supabase.from("queue_entries").select("*").in("status", ["waiting", "in_interview"]).order("position"),
+      supabase.from("candidates").select("roll_no,name,domains,slot,status").not("slot", "is", null).order("slot")
     ]);
+    setSlotted(sl.data || []);
     setPanels(p.data || []);
     setPanelists(m.data || []);
     const entries = q.data || [];
@@ -36,9 +41,15 @@ function DistributeInner() {
       .on("postgres_changes", { event: "*", schema: "public", table: "panels" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "panelists" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "queue_entries" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "candidates" }, load)
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [load]);
+
+  async function reassignSlot(roll_no, slot) {
+    await supabase.from("candidates").update({ slot, slot_emailed_at: null }).eq("roll_no", roll_no);
+    load();
+  }
 
   async function lookup(e) {
     e.preventDefault();
@@ -83,6 +94,47 @@ function DistributeInner() {
   return (
     <main className="px-4 sm:px-6 py-8 max-w-6xl mx-auto">
       <h1 className="font-display text-3xl sm:text-4xl mb-6">Distributor</h1>
+
+      <div className="card p-4 mb-6">
+        <button className="flex items-center gap-2 w-full text-left" onClick={() => setShowSlots(!showSlots)}>
+          <h2 className="font-display text-xl flex-1">Slot schedule <span className="text-muted text-sm">({slotted.length} assigned)</span></h2>
+          <span className="text-muted">{showSlots ? "▾" : "▸"}</span>
+        </button>
+        {showSlots && (() => {
+          const now = Date.now();
+          const groups = {};
+          slotted.forEach((c) => { (groups[c.slot] = groups[c.slot] || []).push(c); });
+          const keys = Object.keys(groups).sort();
+          return (
+            <div className="mt-3 space-y-3 max-h-80 overflow-y-auto pr-1">
+              {keys.map((k) => {
+                const t = new Date(k).getTime();
+                const live = now >= t - 5 * 60000 && now < t + 15 * 60000;
+                const past = now >= t + 15 * 60000;
+                return (
+                  <div key={k} className={`rounded-xl p-3 ${live ? "bg-gold/10 border border-gold/40" : past ? "opacity-50" : "bg-panel"}`}>
+                    <p className={`text-xs mb-1.5 ${live ? "text-gold font-semibold" : "text-muted"}`}>
+                      {new Date(k).toLocaleString("en-IN", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })}
+                      {live && " · NOW"}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {groups[k].map((c) => (
+                        <span key={c.roll_no} className="inline-flex items-center gap-2 bg-card border border-edge rounded-full pl-3 pr-1 py-0.5 text-xs">
+                          <button className="hover:text-gold" onClick={() => { setRoll(c.roll_no); }} title="Load in distributor">
+                            {c.name} <span className="text-muted">({c.roll_no})</span>
+                          </button>
+                          <SlotPicker compact value={c.slot} onChange={(v) => reassignSlot(c.roll_no, v)} />
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+              {keys.length === 0 && <p className="text-muted text-sm italic">No slots assigned yet — set them on the Registrations page.</p>}
+            </div>
+          );
+        })()}
+      </div>
 
       <form onSubmit={lookup} className="flex gap-3 mb-4 max-w-md">
         <input className="input" placeholder="Enter roll number…" value={roll} onChange={(e) => setRoll(e.target.value)} />

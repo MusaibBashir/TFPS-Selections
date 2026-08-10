@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import Guard from "@/components/Guard";
+import Combobox from "@/components/Combobox";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 
@@ -15,6 +16,8 @@ function PanelsInner() {
   const [panels, setPanels] = useState([]);
   const [seated, setSeated] = useState([]); // panelists rows
   const [members, setMembers] = useState([]);
+  const [benchFilter, setBenchFilter] = useState("");
+  const [benchOpen, setBenchOpen] = useState(false);
 
   const load = useCallback(async () => {
     const [p, s, m] = await Promise.all([
@@ -36,8 +39,30 @@ function PanelsInner() {
     return () => supabase.removeChannel(ch);
   }, [load]);
 
-  const seatedRolls = new Set(seated.map((s) => s.member_roll));
+  // Only a seat on a panel that still exists counts as "seated". A panelist row
+  // whose panel is gone must not keep its member out of the off-panel list.
+  const panelIds = new Set(panels.map((p) => p.id));
+  const liveSeats = seated.filter((s) => s.panel_id && panelIds.has(s.panel_id));
+  const seatedRolls = new Set(liveSeats.map((s) => s.member_roll));
   const bench = members.filter((m) => !seatedRolls.has(m.roll_no));
+
+  // options for the seat-a-member picker
+  const benchOptions = bench.map((m) => ({
+    value: m.roll_no,
+    label: m.name,
+    hint: m.domains.join(", ") || "—"
+  }));
+
+  // the off-panel roster is long, so it gets its own filter box
+  const benchQuery = benchFilter.trim().toLowerCase();
+  const benchShown = benchQuery
+    ? bench.filter(
+        (m) =>
+          m.name.toLowerCase().includes(benchQuery) ||
+          m.roll_no.toLowerCase().includes(benchQuery) ||
+          m.domains.some((d) => d.toLowerCase().includes(benchQuery))
+      )
+    : bench;
 
   async function addPanel() {
     await supabase.from("panels").insert({ name: `Panel ${panels.length + 1}` });
@@ -95,14 +120,17 @@ function PanelsInner() {
                 ))}
                 {rows.length === 0 && <p className="text-muted text-sm italic">No panelists seated</p>}
               </div>
-              <select className="input !py-2 text-sm mb-3" value=""
-                onChange={(e) => {
-                  const m = bench.find((b) => b.roll_no === e.target.value);
-                  if (m) seatMember(m, panel.id);
-                }}>
-                <option value="">+ Seat a member…</option>
-                {bench.map((m) => <option key={m.roll_no} value={m.roll_no}>{m.name} ({m.domains.join(", ") || "—"})</option>)}
-              </select>
+              <div className="mb-3">
+                <Combobox
+                  placeholder="+ Seat a member…"
+                  emptyText="No off-panel member matches"
+                  options={benchOptions}
+                  onSelect={(roll) => {
+                    const m = bench.find((b) => b.roll_no === roll);
+                    if (m) seatMember(m, panel.id);
+                  }}
+                />
+              </div>
               {expertise.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mb-3">
                   {expertise.map((d) => <span key={d} className="chip border-gold/30 text-gold/80 text-[10px]">{d}</span>)}
@@ -120,13 +148,57 @@ function PanelsInner() {
         })}
       </div>
 
-      <h2 className="font-display text-2xl mt-10 mb-4">Off-panel members <span className="text-muted text-base">({bench.length})</span></h2>
-      <div className="flex flex-wrap gap-2">
-        {bench.map((m) => (
-          <span key={m.roll_no} className="chip border-edge text-muted">{m.name}</span>
-        ))}
-        {bench.length === 0 && members.length > 0 && <p className="text-muted text-sm italic">Everyone is seated on a panel.</p>}
+      <div className="mt-10 mb-4 flex flex-wrap items-center gap-3">
+        <h2 className="font-display text-2xl">
+          Off-panel members <span className="text-muted text-base">({bench.length})</span>
+        </h2>
+        <input
+          className="input !w-auto !py-1.5 flex-1 min-w-[12rem] max-w-xs text-sm"
+          placeholder="Filter by name, roll or domain…"
+          value={benchFilter}
+          onChange={(e) => setBenchFilter(e.target.value)}
+        />
+        {bench.length > 0 && (
+          <button
+            className="text-xs text-muted hover:text-gold"
+            onClick={() => setBenchOpen((v) => !v)}
+          >
+            {benchOpen ? "hide list" : "show all"}
+          </button>
+        )}
       </div>
+
+      {(benchOpen || benchQuery) && (
+        <div className="flex flex-wrap gap-2">
+          {benchShown.slice(0, 80).map((m) => (
+            <span
+              key={m.roll_no}
+              title={`${m.roll_no} · ${m.domains.join(", ") || "no domains"}`}
+              className="chip border-edge text-muted"
+            >
+              {m.name}
+            </span>
+          ))}
+          {benchShown.length > 80 && (
+            <span className="chip border-edge text-muted italic">
+              +{benchShown.length - 80} more — keep typing
+            </span>
+          )}
+          {benchShown.length === 0 && (
+            <p className="text-muted text-sm italic">No off-panel member matches “{benchFilter}”.</p>
+          )}
+        </div>
+      )}
+
+      {!benchOpen && !benchQuery && bench.length > 0 && (
+        <p className="text-muted text-sm italic">
+          {bench.length} members are not seated on any panel — search above, or “show all”.
+        </p>
+      )}
+
+      {bench.length === 0 && members.length > 0 && (
+        <p className="text-muted text-sm italic">Everyone is seated on a panel.</p>
+      )}
     </main>
   );
 }

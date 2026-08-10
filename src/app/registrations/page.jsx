@@ -2,11 +2,13 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Guard from "@/components/Guard";
 import { supabase, DOMAINS } from "@/lib/supabase";
+import SlotPicker from "@/components/SlotPicker";
 
 function RegistrationsInner() {
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState("");
   const [filterDomain, setFilterDomain] = useState("");
+  const [mailState, setMailState] = useState("");
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("candidates").select("*").order("created_at", { ascending: false });
@@ -30,10 +32,26 @@ function RegistrationsInner() {
     return true;
   }), [rows, search, filterDomain]);
 
+  async function setSlot(roll_no, slot) {
+    await supabase.from("candidates").update({ slot, slot_emailed_at: null }).eq("roll_no", roll_no);
+    load();
+  }
+
+  async function sendSlotEmails() {
+    const password = window.prompt("Admin password to send slot emails:");
+    if (!password) return;
+    setMailState("sending");
+    const { data, error } = await supabase.functions.invoke("send-slot-emails", { body: { password } });
+    if (error) { setMailState(""); return alert("Failed: " + error.message); }
+    setMailState("");
+    alert(`Sent to ${data.sent} candidate(s) across ${data.groups} slot group(s).` + (data.errors?.length ? `\nErrors: ${data.errors.join("; ")}` : ""));
+    load();
+  }
+
   function exportCSV() {
-    const head = ["Roll No", "Name", "Email", "Phone", "Hall", "Dept", "Domains", "Hobbies", "Movie Loved", "Movie Hated", "On TFPS", "About", "Portfolio", "Status", "Registered At"];
+    const head = ["Roll No", "Name", "Slot", "Email", "Phone", "Hall", "Dept", "Domains", "Hobbies", "Movie Loved", "Movie Hated", "On TFPS", "About", "Portfolio", "Status", "Registered At"];
     const lines = filtered.map((r) =>
-      [r.roll_no, r.name, r.email, r.phone, r.hall, r.department, r.domains.join("; "), r.hobbies, r.movie_love, r.movie_hate, r.about_us, r.about, r.portfolio_link, r.status, new Date(r.created_at).toLocaleString()]
+      [r.roll_no, r.name, r.slot ? new Date(r.slot).toLocaleString("en-IN") : "", r.email, r.phone, r.hall, r.department, r.domains.join("; "), r.hobbies, r.movie_love, r.movie_hate, r.about_us, r.about, r.portfolio_link, r.status, new Date(r.created_at).toLocaleString()]
         .map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","));
     const blob = new Blob([head.join(",") + "\n" + lines.join("\n")], { type: "text/csv" });
     const a = document.createElement("a");
@@ -52,13 +70,16 @@ function RegistrationsInner() {
           {DOMAINS.map((d) => <option key={d}>{d}</option>)}
         </select>
         <button className="btn-ghost text-xs" onClick={exportCSV}>Export CSV</button>
+        <button className="btn-gold text-xs" onClick={sendSlotEmails} disabled={mailState === "sending"}>
+          {mailState === "sending" ? "Sending…" : "✉ Email new slots"}
+        </button>
       </div>
 
       <div className="card overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-muted text-xs uppercase tracking-wider border-b border-edge">
-              {["Roll", "Name", "Hall", "Dept", "Contact", "Domains", "Hobbies", "Movie ♥", "Movie ✗", "On TFPS", "About", "Portfolio", "Status", "Registered"].map((h) => (
+              {["Roll", "Name", "Slot", "Hall", "Dept", "Contact", "Domains", "Hobbies", "Movie ♥", "Movie ✗", "On TFPS", "About", "Portfolio", "Status", "Registered"].map((h) => (
                 <th key={h} className="px-3 py-3 text-left font-medium whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -68,6 +89,10 @@ function RegistrationsInner() {
               <tr key={r.roll_no} className="border-b border-edge/50 hover:bg-panel align-top">
                 <td className="px-3 py-2.5 text-muted whitespace-nowrap">{r.roll_no}</td>
                 <td className="px-3 py-2.5 font-medium whitespace-nowrap">{r.name}</td>
+                <td className="px-3 py-2.5 whitespace-nowrap">
+                  <SlotPicker compact value={r.slot} onChange={(v) => setSlot(r.roll_no, v)} />
+                  {r.slot && (r.slot_emailed_at ? <span className="text-green text-[10px] ml-1" title="Slot email sent">✓</span> : <span className="text-yellow text-[10px] ml-1" title="Email pending">●</span>)}
+                </td>
                 <td className="px-3 py-2.5 text-muted whitespace-nowrap">{r.hall || "—"}</td>
                 <td className="px-3 py-2.5 text-muted">{r.department || "—"}</td>
                 <td className="px-3 py-2.5 text-muted text-xs">{r.email}<br />{r.phone}</td>
@@ -85,7 +110,7 @@ function RegistrationsInner() {
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={14} className="px-3 py-10 text-center text-muted italic">No registrations yet.</td></tr>
+              <tr><td colSpan={15} className="px-3 py-10 text-center text-muted italic">No registrations yet.</td></tr>
             )}
           </tbody>
         </table>
