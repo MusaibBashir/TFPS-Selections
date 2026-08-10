@@ -9,6 +9,8 @@ function RegistrationsInner() {
   const [search, setSearch] = useState("");
   const [filterDomain, setFilterDomain] = useState("");
   const [mailState, setMailState] = useState("");
+  const [sortBy, setSortBy] = useState("reg"); // reg | slot
+  const [sortDir, setSortDir] = useState("desc");
   const [showAuto, setShowAuto] = useState(false);
   const [auto, setAuto] = useState({ from: "2026-08-10", to: "2026-08-15", start: "18:30", end: "22:00", perSlot: 8 });
   const [autoState, setAutoState] = useState("");
@@ -35,7 +37,16 @@ function RegistrationsInner() {
       return r.name.toLowerCase().includes(q) || r.roll_no.toLowerCase().includes(q) || (r.hall || "").toLowerCase().includes(q);
     }
     return true;
-  }), [rows, search, filterDomain]);
+  }).sort((a, b) => {
+    const dir = sortDir === "desc" ? 1 : -1;
+    if (sortBy === "slot") {
+      if (!a.slot && !b.slot) return 0;
+      if (!a.slot) return 1; // unslotted always last
+      if (!b.slot) return -1;
+      return (new Date(b.slot) - new Date(a.slot)) * dir;
+    }
+    return (new Date(b.created_at) - new Date(a.created_at)) * dir;
+  }), [rows, search, filterDomain, sortBy, sortDir]);
 
   async function toggleEmailed(r) {
     await supabase.from("candidates").update({ slot_emailed_at: r.slot_emailed_at ? null : new Date().toISOString() }).eq("roll_no", r.roll_no);
@@ -63,7 +74,11 @@ function RegistrationsInner() {
     // current occupancy + unslotted candidates (registration order)
     const occupancy = {};
     rows.forEach((r) => { if (r.slot) occupancy[r.slot] = (occupancy[r.slot] || 0) + 1; });
-    const unslotted = [...rows].filter((r) => !r.slot).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    const unslotted = [...rows].filter((r) => !r.slot);
+    for (let j = unslotted.length - 1; j > 0; j--) { // shuffle — random slot allocation
+      const k = Math.floor(Math.random() * (j + 1));
+      [unslotted[j], unslotted[k]] = [unslotted[k], unslotted[j]];
+    }
     let i = 0, assigned = 0;
     for (const slot of slots) {
       const free = auto.perSlot - (occupancy[slot] || 0);
@@ -128,6 +143,14 @@ function RegistrationsInner() {
           <option value="">All domains</option>
           {DOMAINS.map((d) => <option key={d}>{d}</option>)}
         </select>
+        <select className="input !w-auto" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+          <option value="reg">Sort: Registered</option>
+          <option value="slot">Sort: Slot</option>
+        </select>
+        <button className="btn-ghost !px-3 !py-2.5 text-sm" title="Flip sort direction"
+          onClick={() => setSortDir(sortDir === "desc" ? "asc" : "desc")}>
+          {sortDir === "desc" ? "↓" : "↑"}
+        </button>
         <button className="btn-ghost text-xs" onClick={exportCSV}>Export CSV</button>
         <button className="btn-ghost text-xs" onClick={() => setShowAuto(!showAuto)}>⚡ Auto-assign slots</button>
         <button className="btn-gold text-xs" onClick={openMail}>✉ Email new slots</button>
@@ -157,7 +180,7 @@ function RegistrationsInner() {
 
       {showAuto && (
         <div className="card p-5 mb-6 fade-up">
-          <p className="font-display text-lg mb-3">Auto-assign unslotted candidates <span className="text-muted text-sm font-body">(15-min slots, registration order; existing slots untouched)</span></p>
+          <p className="font-display text-lg mb-3">Auto-assign unslotted candidates <span className="text-muted text-sm font-body">(15-min slots, random order; existing slots untouched)</span></p>
           <div className="flex flex-wrap items-end gap-4">
             <label className="text-xs text-muted">From<br /><input type="date" className="input mt-1 !w-auto" value={auto.from} onChange={(e) => setAuto({ ...auto, from: e.target.value })} /></label>
             <label className="text-xs text-muted">To<br /><input type="date" className="input mt-1 !w-auto" value={auto.to} onChange={(e) => setAuto({ ...auto, to: e.target.value })} /></label>
