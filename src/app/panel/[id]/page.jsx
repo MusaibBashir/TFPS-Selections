@@ -169,7 +169,7 @@ function PanelInner() {
       panelist_names: members.map((m) => m.name),
       ended_at: new Date().toISOString()
     }).eq("id", interview.id);
-    await supabase.from("queue_entries").update({ status: "done" }).eq("id", current.id);
+    await supabase.from("queue_entries").delete().eq("id", current.id);
     await supabase.from("candidates").update({ status: "interviewed" }).eq("roll_no", current.roll_no);
     await supabase.from("panels").update({ status: "open" }).eq("id", id);
     setSaving(false);
