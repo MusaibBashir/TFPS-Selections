@@ -8,26 +8,31 @@ function PanelInner() {
   const { id } = useParams();
   const session = getSession();
   const [panel, setPanel] = useState(null);
-  const [members, setMembers] = useState([]);
+  const [members, setMembers] = useState([]); // seated panelists
+  const [allMembers, setAllMembers] = useState([]); // society members
+  const [allSeated, setAllSeated] = useState([]); // panelists across all panels
   const [queue, setQueue] = useState([]);
   const [candidates, setCandidates] = useState({});
-  const [current, setCurrent] = useState(null); // active queue entry
-  const [interview, setInterview] = useState(null); // active interview row
-  const [notes, setNotes] = useState([]); // interview_feedback rows
-  const [mine, setMine] = useState({ feedback: "", score: "" });
-  const [saveState, setSaveState] = useState("");
-  const [editingMember, setEditingMember] = useState(null); // panelist row being edited
-  const loadedFor = useRef(null);
+  const [current, setCurrent] = useState(null);
+  const [interview, setInterview] = useState(null);
+  const [reviews, setReviews] = useState({}); // { panelistName: text }
+  const [saveState, setSaveState] = useState({}); // { panelistName: "saving"|"saved" }
   const [fin, setFin] = useState({ score: "", tag: "", tasks_assigned: "" });
   const [saving, setSaving] = useState(false);
+  const [editingMember, setEditingMember] = useState(null);
+  const loadedFor = useRef(null);
+  const timers = useRef({});
 
   const load = useCallback(async () => {
-    const [p, m, q] = await Promise.all([
+    const [p, m, q, am, asd] = await Promise.all([
       supabase.from("panels").select("*").eq("id", id).maybeSingle(),
-      supabase.from("panelists").select("*").eq("panel_id", id),
-      supabase.from("queue_entries").select("*").eq("panel_id", id).in("status", ["waiting", "in_interview"]).order("position")
+      supabase.from("panelists").select("*").eq("panel_id", id).order("name"),
+      supabase.from("queue_entries").select("*").eq("panel_id", id).in("status", ["waiting", "in_interview"]).order("position"),
+      supabase.from("members").select("*").order("name"),
+      supabase.from("panelists").select("member_roll")
     ]);
     setPanel(p.data); setMembers(m.data || []);
+    setAllMembers(am.data || []); setAllSeated(asd.data || []);
     const entries = q.data || [];
     setQueue(entries);
     const active = entries.find((e) => e.status === "in_interview") || null;
@@ -42,12 +47,16 @@ function PanelInner() {
         .eq("panel_id", id).eq("roll_no", active.roll_no).is("ended_at", null)
         .order("started_at", { ascending: false }).limit(1).maybeSingle();
       setInterview(iv || null);
-      if (iv) {
-        const { data: fb } = await supabase.from("interview_feedback").select("*").eq("interview_id", iv.id).order("created_at");
-        setNotes(fb || []);
+      if (iv && loadedFor.current !== iv.id) {
+        loadedFor.current = iv.id;
+        const { data: fb } = await supabase.from("interview_feedback").select("*").eq("interview_id", iv.id);
+        setReviews(Object.fromEntries((fb || []).map((n) => [n.panelist, n.feedback || ""])));
+        setSaveState({});
+        setFin({ score: "", tag: "", tasks_assigned: "" });
       }
     } else {
-      setInterview(null); setNotes([]);
+      setInterview(null);
+      loadedFor.current = null;
     }
   }, [id]);
 
@@ -56,18 +65,48 @@ function PanelInner() {
     const ch = supabase.channel(`panel-${id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "queue_entries" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "panelists" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "interview_feedback" }, load)
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [id, load]);
 
-  const canEditMembers = session && (session.role === "admin" || members.some((m) => m.member_roll === session.roll_no));
+  const canManage = session && (session.role === "admin" || members.some((m) => m.member_roll === session.roll_no));
 
+  // ---- seat management (any member of this panel, or admin) ----
+  const seatedRolls = new Set(allSeated.map((s) => s.member_roll));
+  const bench = allMembers.filter((m) => !seatedRolls.has(m.roll_no));
+
+  async function seatMember(rollNo) {
+    const m = bench.find((b) => b.roll_no === rollNo);
+    if (!m) return;
+    await supabase.from("panelists").insert({ name: m.name, domains: m.domains, panel_id: id, member_roll: m.roll_no });
+    load();
+  }
+  async function unseat(row) {
+    await supabase.from("panelists").delete().eq("id", row.id);
+    load();
+  }
   async function toggleMemberDomain(row, d) {
     const next = row.domains.includes(d) ? row.domains.filter((x) => x !== d) : [...row.domains, d];
     await supabase.from("panelists").update({ domains: next }).eq("id", row.id);
     if (row.member_roll) await supabase.from("members").update({ domains: next }).eq("roll_no", row.member_roll);
     load();
+  }
+
+  // ---- review autosave (one laptop, everyone's box on screen) ----
+  function setReview(panelist, text) {
+    setReviews((r) => ({ ...r, [panelist]: text }));
+    setSaveState((s2) => ({ ...s2, [panelist]: "saving" }));
+    clearTimeout(timers.current[panelist]);
+    timers.current[panelist] = setTimeout(async () => {
+      if (!interview) return;
+      await supabase.from("interview_feedback").upsert({
+        interview_id: interview.id,
+        roll_no: interview.roll_no,
+        panelist,
+        feedback: text || null
+      }, { onConflict: "interview_id,panelist" });
+      setSaveState((s2) => ({ ...s2, [panelist]: "saved" }));
+    }, 800);
   }
 
   async function startInterview(entry) {
@@ -80,8 +119,6 @@ function PanelInner() {
     await supabase.from("queue_entries").update({ status: "in_interview" }).eq("id", entry.id);
     await supabase.from("panels").update({ status: "interviewing" }).eq("id", id);
     await supabase.from("candidates").update({ status: "interviewing" }).eq("roll_no", entry.roll_no);
-    setMine({ feedback: "", score: "" });
-    setFin({ score: "", tag: "", tasks_assigned: "" });
     load();
   }
 
@@ -102,34 +139,6 @@ function PanelInner() {
     load();
   }
 
-  useEffect(() => {
-    if (interview && loadedFor.current !== interview.id) {
-      loadedFor.current = interview.id;
-      const n = notes.find((x) => x.panelist === session?.name);
-      setMine(n ? { feedback: n.feedback || "", score: n.score ?? "" } : { feedback: "", score: "" });
-      setSaveState("");
-    }
-    if (!interview) loadedFor.current = null;
-  }, [interview, notes, session]);
-
-  // autosave my feedback (debounced)
-  useEffect(() => {
-    if (!interview || !session || loadedFor.current !== interview.id) return;
-    if (mine.feedback === "" && mine.score === "") return;
-    setSaveState("saving");
-    const t = setTimeout(async () => {
-      await supabase.from("interview_feedback").upsert({
-        interview_id: interview.id,
-        roll_no: interview.roll_no,
-        panelist: session.name,
-        feedback: mine.feedback || null,
-        score: mine.score === "" ? null : Number(mine.score)
-      }, { onConflict: "interview_id,panelist" });
-      setSaveState("saved");
-    }, 800);
-    return () => clearTimeout(t);
-  }, [mine, interview, session]);
-
   const cand = current ? candidates[current.roll_no] : null;
   const waiting = queue.filter((e) => e.status === "waiting");
 
@@ -140,18 +149,28 @@ function PanelInner() {
       <div className="flex flex-wrap items-center gap-3 mb-2">
         <h1 className="font-display text-3xl sm:text-4xl">{panel.name}</h1>
       </div>
-      <div className="flex flex-wrap gap-2 mb-6">
+      <div className="flex flex-wrap items-center gap-2 mb-6">
         {members.map((m) => (
           <div key={m.id} className="chip border-edge text-muted gap-2">
             <span className="text-cream">{m.name}</span>
             <span className="text-xs">{m.domains.join(", ") || "—"}</span>
-            {canEditMembers && (
-              <button className="text-gold/70 hover:text-gold text-xs" title="Edit domains"
-                onClick={() => setEditingMember(editingMember === m.id ? null : m.id)}>✎</button>
+            {canManage && (
+              <>
+                <button className="text-gold/70 hover:text-gold text-xs" title="Edit domains"
+                  onClick={() => setEditingMember(editingMember === m.id ? null : m.id)}>✎</button>
+                <button className="text-muted hover:text-red text-xs" title="Remove from panel" onClick={() => unseat(m)}>✕</button>
+              </>
             )}
           </div>
         ))}
-        {members.length === 0 && <span className="chip border-edge text-muted">no panelists</span>}
+        {canManage && (
+          <select className="bg-panel border border-edge rounded-full text-xs text-muted px-3 py-1.5 outline-none cursor-pointer" value=""
+            onChange={(e) => e.target.value && seatMember(e.target.value)}>
+            <option value="">+ add member…</option>
+            {bench.map((m) => <option key={m.roll_no} value={m.roll_no}>{m.name}</option>)}
+          </select>
+        )}
+        {members.length === 0 && !canManage && <span className="chip border-edge text-muted">no panelists</span>}
       </div>
       {editingMember && (() => {
         const row = members.find((m) => m.id === editingMember);
@@ -192,36 +211,33 @@ function PanelInner() {
               {cand.about && <p className="text-sm text-cream/80 mb-2"><span className="text-muted">About:</span> {cand.about}</p>}
               {cand.portfolio_link && <a className="text-gold text-sm hover:underline" href={cand.portfolio_link} target="_blank" rel="noreferrer">Portfolio ↗</a>}
 
-              {/* individual feedback */}
+              {/* one review box per seated panelist */}
               <div className="border-t border-edge mt-5 pt-5">
-                <h3 className="font-display text-lg mb-2">Your feedback <span className="text-muted text-sm">({session?.name})</span></h3>
-                <textarea className="input min-h-[90px] mb-3" placeholder="Your personal notes on this candidate… (autosaves)"
-                  value={mine.feedback} onChange={(e) => setMine({ ...mine, feedback: e.target.value })} />
-                <div className="flex items-center gap-3">
-                  <input className="input !w-28" type="number" step="0.5" min="0" max="10" placeholder="Your /10"
-                    value={mine.score} onChange={(e) => setMine({ ...mine, score: e.target.value })} />
-                  <span className="text-muted text-xs">{saveState === "saving" ? "Saving…" : saveState === "saved" ? "✓ Saved" : "Autosaves as you type"}</span>
-                </div>
-                {notes.length > 0 && (
-                  <div className="mt-4 space-y-2">
-                    {notes.map((n) => (
-                      <div key={n.id} className="bg-panel rounded-xl p-3 text-sm flex items-start gap-3">
-                        <span className="chip border-edge text-muted shrink-0">{n.panelist}</span>
-                        {n.score != null && <span className="chip border-gold/40 text-gold shrink-0">{n.score}/10</span>}
-                        <p className="text-cream/80">{n.feedback}</p>
+                <h3 className="font-display text-lg mb-3">Review</h3>
+                {members.length === 0 && <p className="text-muted text-sm italic">Seat panel members above to write reviews.</p>}
+                <div className="space-y-3">
+                  {members.map((m) => (
+                    <div key={m.id}>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-sm text-gold">{m.name}</label>
+                        <span className="text-muted text-[10px]">
+                          {saveState[m.name] === "saving" ? "saving…" : saveState[m.name] === "saved" ? "✓ saved" : ""}
+                        </span>
                       </div>
-                    ))}
-                  </div>
-                )}
+                      <textarea className="input min-h-[70px]" placeholder={`${m.name}'s notes… (autosaves)`}
+                        value={reviews[m.name] || ""} onChange={(e) => setReview(m.name, e.target.value)} />
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* panel verdict */}
               <div className="border-t border-edge mt-5 pt-5 space-y-4">
-                <h3 className="font-display text-lg">Panel verdict <span className="text-muted text-sm font-body">(all optional — just hit Finish when done)</span></h3>
-                <input className="input" placeholder="Task assigned (e.g. Street photo series, 1-min edit…)"
+                <h3 className="font-display text-lg">Panel verdict <span className="text-muted text-sm font-body">(rating &amp; colour optional)</span></h3>
+                <input className="input" placeholder="Task assigned by the panel (e.g. Street photo series, 1-min edit…)"
                   value={fin.tasks_assigned} onChange={(e) => setFin({ ...fin, tasks_assigned: e.target.value })} />
                 <div className="flex flex-wrap items-center gap-3">
-                  <input className="input !w-28" type="number" step="0.5" min="0" max="10" placeholder="Panel /10"
+                  <input className="input !w-28" type="number" step="0.5" min="0" max="10" placeholder="Rating /10"
                     value={fin.score} onChange={(e) => setFin({ ...fin, score: e.target.value })} />
                   <div className="flex gap-2">
                     {["green", "yellow", "red"].map((t) => (

@@ -21,7 +21,7 @@ function DistributeInner() {
       supabase.from("panels").select("*").order("created_at"),
       supabase.from("panelists").select("*"),
       supabase.from("queue_entries").select("*").in("status", ["waiting", "in_interview"]).order("position"),
-      supabase.from("candidates").select("roll_no,name,domains,slot,status").not("slot", "is", null).order("slot")
+      supabase.from("candidates").select("roll_no,name,phone,domains,slot,status").not("slot", "is", null).order("slot")
     ]);
     setSlotted(sl.data || []);
     setPanels(p.data || []);
@@ -121,7 +121,7 @@ function DistributeInner() {
                       {groups[k].map((c) => (
                         <span key={c.roll_no} className="inline-flex items-center gap-2 bg-card border border-edge rounded-full pl-3 pr-1 py-0.5 text-xs">
                           <button className="hover:text-gold" onClick={() => { setRoll(c.roll_no); }} title="Load in distributor">
-                            {c.name} <span className="text-muted">({c.roll_no})</span>
+                            {c.name} <span className="text-muted">({c.phone || c.roll_no})</span>
                           </button>
                           <SlotPicker compact value={c.slot} onChange={(v) => reassignSlot(c.roll_no, v)} />
                         </span>
