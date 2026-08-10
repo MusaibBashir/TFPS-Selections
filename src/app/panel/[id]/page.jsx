@@ -22,6 +22,9 @@ function PanelInner() {
   const [editingMember, setEditingMember] = useState(null);
   const loadedFor = useRef(null);
   const timers = useRef({});
+  const dirty = useRef({}); // boxes with unsaved local edits
+  const finDirty = useRef(false);
+  const finTimer = useRef(null);
 
   const load = useCallback(async () => {
     const [p, m, q, am, asd] = await Promise.all([
@@ -52,7 +55,9 @@ function PanelInner() {
         const { data: fb } = await supabase.from("interview_feedback").select("*").eq("interview_id", iv.id);
         setReviews(Object.fromEntries((fb || []).map((n) => [n.panelist, n.feedback || ""])));
         setSaveState({});
-        setFin({ score: "", tag: "", tasks_assigned: "" });
+        dirty.current = {};
+        finDirty.current = false;
+        setFin({ score: iv.score ?? "", tag: iv.tag || "", tasks_assigned: iv.tasks_assigned || "" });
       }
     } else {
       setInterview(null);
@@ -65,6 +70,19 @@ function PanelInner() {
     const ch = supabase.channel(`panel-${id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "queue_entries" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "panelists" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "interview_feedback" }, (payload) => {
+        const row = payload.new;
+        if (!row || row.interview_id !== loadedFor.current) return;
+        if (dirty.current[row.panelist]) return; // don't clobber a box being typed in here
+        setReviews((r) => ({ ...r, [row.panelist]: row.feedback || "" }));
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "interviews" }, (payload) => {
+        const row = payload.new;
+        if (!row || row.id !== loadedFor.current) return;
+        if (row.ended_at) { load(); return; } // other laptop finished
+        if (finDirty.current) return;
+        setFin({ score: row.score ?? "", tag: row.tag || "", tasks_assigned: row.tasks_assigned || "" });
+      })
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [id, load]);
@@ -96,6 +114,7 @@ function PanelInner() {
   function setReview(panelist, text) {
     setReviews((r) => ({ ...r, [panelist]: text }));
     setSaveState((s2) => ({ ...s2, [panelist]: "saving" }));
+    dirty.current[panelist] = true;
     clearTimeout(timers.current[panelist]);
     timers.current[panelist] = setTimeout(async () => {
       if (!interview) return;
@@ -105,17 +124,35 @@ function PanelInner() {
         panelist,
         feedback: text || null
       }, { onConflict: "interview_id,panelist" });
+      dirty.current[panelist] = false;
       setSaveState((s2) => ({ ...s2, [panelist]: "saved" }));
     }, 800);
   }
 
+  // verdict autosaves too, so both laptops stay in sync
+  function setFinSynced(next) {
+    setFin(next);
+    finDirty.current = true;
+    clearTimeout(finTimer.current);
+    finTimer.current = setTimeout(async () => {
+      if (!interview) return;
+      await supabase.from("interviews").update({
+        score: next.score === "" ? null : Number(next.score),
+        tag: next.tag || null,
+        tasks_assigned: next.tasks_assigned || null
+      }).eq("id", interview.id);
+      finDirty.current = false;
+    }, 800);
+  }
+
   async function startInterview(entry) {
-    await supabase.from("interviews").insert({
+    const { error: dup } = await supabase.from("interviews").insert({
       roll_no: entry.roll_no,
       panel_id: id,
       panel_name: panel?.name,
       panelist_names: members.map((m) => m.name)
     });
+    if (dup && dup.code !== "23505") { alert(dup.message); return; }
     await supabase.from("queue_entries").update({ status: "in_interview" }).eq("id", entry.id);
     await supabase.from("panels").update({ status: "interviewing" }).eq("id", id);
     await supabase.from("candidates").update({ status: "interviewing" }).eq("roll_no", entry.roll_no);
@@ -235,13 +272,13 @@ function PanelInner() {
               <div className="border-t border-edge mt-5 pt-5 space-y-4">
                 <h3 className="font-display text-lg">Panel verdict <span className="text-muted text-sm font-body">(rating &amp; colour optional)</span></h3>
                 <input className="input" placeholder="Task assigned by the panel (e.g. Street photo series, 1-min edit…)"
-                  value={fin.tasks_assigned} onChange={(e) => setFin({ ...fin, tasks_assigned: e.target.value })} />
+                  value={fin.tasks_assigned} onChange={(e) => setFinSynced({ ...fin, tasks_assigned: e.target.value })} />
                 <div className="flex flex-wrap items-center gap-3">
                   <input className="input !w-28" type="number" step="0.5" min="0" max="10" placeholder="Rating /10"
-                    value={fin.score} onChange={(e) => setFin({ ...fin, score: e.target.value })} />
+                    value={fin.score} onChange={(e) => setFinSynced({ ...fin, score: e.target.value })} />
                   <div className="flex gap-2">
                     {["green", "yellow", "red"].map((t) => (
-                      <button key={t} type="button" onClick={() => setFin({ ...fin, tag: fin.tag === t ? "" : t })}
+                      <button key={t} type="button" onClick={() => setFinSynced({ ...fin, tag: fin.tag === t ? "" : t })}
                         className={`chip capitalize ${fin.tag === t ? tagColor(t) + " ring-1 ring-current" : "border-edge text-muted"}`}>
                         {t}
                       </button>
