@@ -12,6 +12,8 @@ function RegistrationsInner() {
   const [showAuto, setShowAuto] = useState(false);
   const [auto, setAuto] = useState({ from: "2026-08-10", to: "2026-08-15", start: "18:30", end: "22:00", perSlot: 8 });
   const [autoState, setAutoState] = useState("");
+  const [showMail, setShowMail] = useState(false);
+  const [mailDays, setMailDays] = useState([]);
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("candidates").select("*").order("created_at", { ascending: false });
@@ -79,13 +81,28 @@ function RegistrationsInner() {
     load();
   }
 
+  const istDay = (iso) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const pendingByDay = rows.filter((r) => r.slot && !r.slot_emailed_at && r.email).reduce((acc, r) => {
+    const d = istDay(r.slot);
+    acc[d] = (acc[d] || 0) + 1;
+    return acc;
+  }, {});
+
+  function openMail() {
+    setMailDays(Object.keys(pendingByDay).sort());
+    setShowMail(!showMail);
+    setShowAuto(false);
+  }
+
   async function sendSlotEmails() {
+    if (mailDays.length === 0) return alert("Pick at least one day.");
     const password = window.prompt("Admin password to send slot emails:");
     if (!password) return;
     setMailState("sending");
-    const { data, error } = await supabase.functions.invoke("send-slot-emails", { body: { password } });
+    const { data, error } = await supabase.functions.invoke("send-slot-emails", { body: { password, dates: mailDays } });
     if (error) { setMailState(""); return alert("Failed: " + error.message); }
     setMailState("");
+    setShowMail(false);
     alert(`Sent to ${data.sent} candidate(s) across ${data.groups} slot group(s).` + (data.errors?.length ? `\nErrors: ${data.errors.join("; ")}` : ""));
     load();
   }
@@ -113,10 +130,30 @@ function RegistrationsInner() {
         </select>
         <button className="btn-ghost text-xs" onClick={exportCSV}>Export CSV</button>
         <button className="btn-ghost text-xs" onClick={() => setShowAuto(!showAuto)}>⚡ Auto-assign slots</button>
-        <button className="btn-gold text-xs" onClick={sendSlotEmails} disabled={mailState === "sending"}>
-          {mailState === "sending" ? "Sending…" : "✉ Email new slots"}
-        </button>
+        <button className="btn-gold text-xs" onClick={openMail}>✉ Email new slots</button>
       </div>
+
+      {showMail && (
+        <div className="card p-5 mb-6 fade-up">
+          <p className="font-display text-lg mb-3">Send slot emails <span className="text-muted text-sm font-body">(only to pending candidates on the selected days)</span></p>
+          {Object.keys(pendingByDay).length === 0 ? (
+            <p className="text-muted text-sm italic">Nothing pending — everyone with a slot and an email has been notified.</p>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3">
+              {Object.keys(pendingByDay).sort().map((d) => (
+                <button key={d} type="button"
+                  onClick={() => setMailDays(mailDays.includes(d) ? mailDays.filter((x) => x !== d) : [...mailDays, d])}
+                  className={`chip ${mailDays.includes(d) ? "border-gold bg-gold/15 text-gold" : "border-edge text-muted"}`}>
+                  {new Date(d + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })} · {pendingByDay[d]}
+                </button>
+              ))}
+              <button className="btn-gold text-sm ml-auto" onClick={sendSlotEmails} disabled={mailState === "sending"}>
+                {mailState === "sending" ? "Sending…" : `Send (${mailDays.reduce((n, d) => n + (pendingByDay[d] || 0), 0)} candidates)`}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {showAuto && (
         <div className="card p-5 mb-6 fade-up">
