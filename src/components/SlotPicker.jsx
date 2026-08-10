@@ -3,7 +3,8 @@ import { useState } from "react";
 
 // Quick 15-min slot picker: 7 date chips + tap-a-time grid. No calendar, no clock.
 const TIMES = [];
-for (let h = 9; h <= 20; h++) for (let m = 0; m < 60; m += 15) TIMES.push([h, m]);
+for (let h = 9; h <= 21; h++) for (let m = 0; m < 60; m += 15) TIMES.push([h, m]);
+TIMES.push([22, 0]);
 
 export default function SlotPicker({ value, onChange, compact = false }) {
   const [open, setOpen] = useState(false);

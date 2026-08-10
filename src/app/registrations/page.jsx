@@ -9,6 +9,9 @@ function RegistrationsInner() {
   const [search, setSearch] = useState("");
   const [filterDomain, setFilterDomain] = useState("");
   const [mailState, setMailState] = useState("");
+  const [showAuto, setShowAuto] = useState(false);
+  const [auto, setAuto] = useState({ from: "2026-08-10", to: "2026-08-15", start: "18:30", end: "22:00", perSlot: 8 });
+  const [autoState, setAutoState] = useState("");
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("candidates").select("*").order("created_at", { ascending: false });
@@ -39,6 +42,40 @@ function RegistrationsInner() {
 
   async function setSlot(roll_no, slot) {
     await supabase.from("candidates").update({ slot, slot_emailed_at: null }).eq("roll_no", roll_no);
+    load();
+  }
+
+  async function autoAssign() {
+    setAutoState("working");
+    // build all slot times in the window
+    const [sh, sm] = auto.start.split(":").map(Number);
+    const [eh, em] = auto.end.split(":").map(Number);
+    const slots = [];
+    for (let d = new Date(auto.from + "T00:00:00"); d <= new Date(auto.to + "T00:00:00"); d.setDate(d.getDate() + 1)) {
+      for (let t = sh * 60 + sm; t <= eh * 60 + em; t += 15) {
+        const dt = new Date(d);
+        dt.setHours(Math.floor(t / 60), t % 60, 0, 0);
+        slots.push(dt.toISOString());
+      }
+    }
+    // current occupancy + unslotted candidates (registration order)
+    const occupancy = {};
+    rows.forEach((r) => { if (r.slot) occupancy[r.slot] = (occupancy[r.slot] || 0) + 1; });
+    const unslotted = [...rows].filter((r) => !r.slot).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    let i = 0, assigned = 0;
+    for (const slot of slots) {
+      const free = auto.perSlot - (occupancy[slot] || 0);
+      if (free <= 0) continue;
+      const batch = unslotted.slice(i, i + free);
+      if (batch.length === 0) break;
+      await supabase.from("candidates").update({ slot, slot_emailed_at: null }).in("roll_no", batch.map((r) => r.roll_no));
+      i += batch.length; assigned += batch.length;
+    }
+    setAutoState("");
+    setShowAuto(false);
+    alert(assigned < unslotted.length
+      ? `Assigned ${assigned}; ${unslotted.length - assigned} didn't fit — widen the window or raise per-slot.`
+      : `Assigned ${assigned} candidate(s).`);
     load();
   }
 
@@ -75,10 +112,27 @@ function RegistrationsInner() {
           {DOMAINS.map((d) => <option key={d}>{d}</option>)}
         </select>
         <button className="btn-ghost text-xs" onClick={exportCSV}>Export CSV</button>
+        <button className="btn-ghost text-xs" onClick={() => setShowAuto(!showAuto)}>⚡ Auto-assign slots</button>
         <button className="btn-gold text-xs" onClick={sendSlotEmails} disabled={mailState === "sending"}>
           {mailState === "sending" ? "Sending…" : "✉ Email new slots"}
         </button>
       </div>
+
+      {showAuto && (
+        <div className="card p-5 mb-6 fade-up">
+          <p className="font-display text-lg mb-3">Auto-assign unslotted candidates <span className="text-muted text-sm font-body">(15-min slots, registration order; existing slots untouched)</span></p>
+          <div className="flex flex-wrap items-end gap-4">
+            <label className="text-xs text-muted">From<br /><input type="date" className="input mt-1 !w-auto" value={auto.from} onChange={(e) => setAuto({ ...auto, from: e.target.value })} /></label>
+            <label className="text-xs text-muted">To<br /><input type="date" className="input mt-1 !w-auto" value={auto.to} onChange={(e) => setAuto({ ...auto, to: e.target.value })} /></label>
+            <label className="text-xs text-muted">First slot<br /><input type="time" step="900" className="input mt-1 !w-auto" value={auto.start} onChange={(e) => setAuto({ ...auto, start: e.target.value })} /></label>
+            <label className="text-xs text-muted">Last slot<br /><input type="time" step="900" className="input mt-1 !w-auto" value={auto.end} onChange={(e) => setAuto({ ...auto, end: e.target.value })} /></label>
+            <label className="text-xs text-muted">Per slot<br /><input type="number" min="1" max="50" className="input mt-1 !w-24" value={auto.perSlot} onChange={(e) => setAuto({ ...auto, perSlot: Number(e.target.value) || 1 })} /></label>
+            <button className="btn-gold text-sm" onClick={autoAssign} disabled={autoState === "working"}>
+              {autoState === "working" ? "Assigning…" : `Assign ${rows.filter((r) => !r.slot).length} unslotted`}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="card overflow-x-auto">
         <table className="w-full text-sm">
