@@ -32,6 +32,11 @@ function RegistrationsInner() {
     return true;
   }), [rows, search, filterDomain]);
 
+  async function toggleEmailed(r) {
+    await supabase.from("candidates").update({ slot_emailed_at: r.slot_emailed_at ? null : new Date().toISOString() }).eq("roll_no", r.roll_no);
+    load();
+  }
+
   async function setSlot(roll_no, slot) {
     await supabase.from("candidates").update({ slot, slot_emailed_at: null }).eq("roll_no", roll_no);
     load();
@@ -91,7 +96,12 @@ function RegistrationsInner() {
                 <td className="px-3 py-2.5 font-medium whitespace-nowrap">{r.name}</td>
                 <td className="px-3 py-2.5 whitespace-nowrap">
                   <SlotPicker compact value={r.slot} onChange={(v) => setSlot(r.roll_no, v)} />
-                  {r.slot && (r.slot_emailed_at ? <span className="text-green text-[10px] ml-1" title="Slot email sent">✓</span> : <span className="text-yellow text-[10px] ml-1" title="Email pending">●</span>)}
+                  {r.slot && (
+                    <button className="ml-1 text-[10px] hover:scale-125 transition-transform" onClick={() => toggleEmailed(r)}
+                      title={r.slot_emailed_at ? "Email sent — click to mark as pending" : "Email pending — click to mark as sent"}>
+                      {r.slot_emailed_at ? <span className="text-green">✓</span> : <span className="text-yellow">●</span>}
+                    </button>
+                  )}
                 </td>
                 <td className="px-3 py-2.5 text-muted whitespace-nowrap">{r.hall || "—"}</td>
                 <td className="px-3 py-2.5 text-muted">{r.department || "—"}</td>
