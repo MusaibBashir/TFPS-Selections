@@ -103,6 +103,19 @@ function RegistrationsInner() {
     load();
   }
 
+  const istDay = (iso) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const pendingByDay = rows.filter((r) => r.slot && !r.slot_emailed_at && r.email && r.status !== "interviewed").reduce((acc, r) => {
+    const d = istDay(r.slot);
+    acc[d] = (acc[d] || 0) + 1;
+    return acc;
+  }, {});
+
+  function openMail() {
+    setMailDays(Object.keys(pendingByDay).sort());
+    setShowMail(!showMail);
+    setShowAuto(false);
+  }
+
   async function sendSlotEmails() {
     if (mailDays.length === 0) return alert("Pick at least one day.");
     const password = window.prompt("Admin password to send slot emails:");
