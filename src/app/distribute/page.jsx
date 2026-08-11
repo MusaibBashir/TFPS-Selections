@@ -21,7 +21,7 @@ function DistributeInner() {
       supabase.from("panels").select("*").order("created_at"),
       supabase.from("panelists").select("*"),
       supabase.from("queue_entries").select("*").in("status", ["waiting", "in_interview"]).order("position"),
-      supabase.from("candidates").select("roll_no,name,phone,domains,slot,status").not("slot", "is", null).order("slot")
+      supabase.from("candidates").select("roll_no,name,phone,domains,slot,status,slot_emailed_at,rescheduled").not("slot", "is", null).order("slot")
     ]);
     setSlotted(sl.data || []);
     setPanels(p.data || []);
@@ -46,8 +46,9 @@ function DistributeInner() {
     return () => supabase.removeChannel(ch);
   }, [load]);
 
-  async function reassignSlot(roll_no, slot) {
-    await supabase.from("candidates").update({ slot, slot_emailed_at: null }).eq("roll_no", roll_no);
+  async function reassignSlot(c, slot) {
+    const rescheduled = c.rescheduled || !!(c.slot && c.slot_emailed_at);
+    await supabase.from("candidates").update({ slot, slot_emailed_at: null, rescheduled: slot ? rescheduled : false }).eq("roll_no", c.roll_no);
     load();
   }
 
@@ -129,7 +130,7 @@ function DistributeInner() {
                             <button className="hover:text-gold" onClick={() => { setRoll(c.roll_no); }} title="Load in distributor">
                               {c.name} <span className="text-muted">({c.phone || c.roll_no})</span>
                             </button>
-                            {!arrived && <SlotPicker compact value={c.slot} onChange={(v) => reassignSlot(c.roll_no, v)} />}
+                            {!arrived && <SlotPicker compact value={c.slot} onChange={(v) => reassignSlot(c, v)} />}
                           </span>
                         );
                       })}

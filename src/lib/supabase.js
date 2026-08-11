@@ -29,18 +29,22 @@ export function tagColor(tag) {
   return "text-muted border-edge bg-transparent";
 }
 
-// session helpers
+// session helpers — persists across tabs/visits; expires after 7 days or on explicit logout
+const SESSION_TTL = 7 * 24 * 3600 * 1000;
 export function getSession() {
   if (typeof window === "undefined") return null;
   try {
-    return JSON.parse(sessionStorage.getItem("tfps_session"));
+    const s = JSON.parse(localStorage.getItem("tfps_session"));
+    if (!s) return null;
+    if (s.exp && Date.now() > s.exp) { localStorage.removeItem("tfps_session"); return null; }
+    return s;
   } catch {
     return null;
   }
 }
 export function setSession(s) {
-  sessionStorage.setItem("tfps_session", JSON.stringify(s));
+  localStorage.setItem("tfps_session", JSON.stringify({ ...s, exp: Date.now() + SESSION_TTL }));
 }
 export function clearSession() {
-  sessionStorage.removeItem("tfps_session");
+  localStorage.removeItem("tfps_session");
 }
