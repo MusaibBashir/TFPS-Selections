@@ -20,6 +20,12 @@ function PanelInner() {
   const [fin, setFin] = useState({ score: "", tag: "", tasks_assigned: "" });
   const [saving, setSaving] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
+  const [past, setPast] = useState([]);
+  const [pastCands, setPastCands] = useState({});
+  const [openPast, setOpenPast] = useState(null); // interview id
+  const [pastFB, setPastFB] = useState({});
+  const [pastFin, setPastFin] = useState({ score: "", tag: "", tasks_assigned: "" });
+  const [pastSaving, setPastSaving] = useState(false);
   const loadedFor = useRef(null);
   const timers = useRef({});
   const dirty = useRef({}); // boxes with unsaved local edits
@@ -44,6 +50,14 @@ function PanelInner() {
     if (rolls.length) {
       const { data: cands } = await supabase.from("candidates").select("*").in("roll_no", rolls);
       setCandidates(Object.fromEntries((cands || []).map((c) => [c.roll_no, c])));
+    }
+    const { data: done } = await supabase.from("interviews").select("*")
+      .eq("panel_id", id).not("ended_at", "is", null).order("ended_at", { ascending: false });
+    setPast(done || []);
+    const doneRolls = [...new Set((done || []).map((x) => x.roll_no))];
+    if (doneRolls.length) {
+      const { data: dc } = await supabase.from("candidates").select("roll_no,name,domains").in("roll_no", doneRolls);
+      setPastCands(Object.fromEntries((dc || []).map((c) => [c.roll_no, c])));
     }
     if (active) {
       const { data: iv } = await supabase.from("interviews").select("*")
@@ -156,6 +170,35 @@ function PanelInner() {
     await supabase.from("queue_entries").update({ status: "in_interview" }).eq("id", entry.id);
     await supabase.from("panels").update({ status: "interviewing" }).eq("id", id);
     await supabase.from("candidates").update({ status: "interviewing" }).eq("roll_no", entry.roll_no);
+    load();
+  }
+
+  async function openPastInterview(iv) {
+    if (openPast === iv.id) { setOpenPast(null); return; }
+    const { data: fb } = await supabase.from("interview_feedback").select("*").eq("interview_id", iv.id);
+    const map = Object.fromEntries((fb || []).map((n) => [n.panelist, n.feedback || ""]));
+    // include current seats + anyone who wrote back then
+    members.forEach((m) => { if (!(m.name in map)) map[m.name] = ""; });
+    setPastFB(map);
+    setPastFin({ score: iv.score ?? "", tag: iv.tag || "", tasks_assigned: iv.tasks_assigned || "" });
+    setOpenPast(iv.id);
+  }
+
+  async function savePast(iv) {
+    setPastSaving(true);
+    await supabase.from("interviews").update({
+      score: pastFin.score === "" ? null : Number(pastFin.score),
+      tag: pastFin.tag || null,
+      tasks_assigned: pastFin.tasks_assigned || null
+    }).eq("id", iv.id);
+    for (const [panelist, text] of Object.entries(pastFB)) {
+      if (text === "" ) continue;
+      await supabase.from("interview_feedback").upsert({
+        interview_id: iv.id, roll_no: iv.roll_no, panelist, feedback: text || null
+      }, { onConflict: "interview_id,panelist" });
+    }
+    setPastSaving(false);
+    setOpenPast(null);
     load();
   }
 
@@ -321,6 +364,57 @@ function PanelInner() {
             {waiting.length === 0 && <p className="text-muted text-sm italic">Queue is empty.</p>}
           </div>
         </div>
+      </div>
+
+      <h2 className="font-display text-2xl mt-10 mb-4">Past interviews <span className="text-muted text-base">({past.length})</span></h2>
+      <div className="space-y-2">
+        {past.map((iv) => {
+          const c = pastCands[iv.roll_no];
+          return (
+            <div key={iv.id} className="card">
+              <button className="w-full flex items-center gap-3 px-5 py-3 text-left" onClick={() => openPastInterview(iv)}>
+                <span className={`inline-block w-2.5 h-2.5 rounded-full shrink-0`} style={{ background: iv.tag === "green" ? "#4ade80" : iv.tag === "yellow" ? "#facc15" : iv.tag === "red" ? "#f87171" : "#2b2721" }} />
+                <span className="font-medium">{c ? c.name : iv.roll_no}</span>
+                <span className="text-muted text-xs">{iv.roll_no}</span>
+                <span className="text-muted text-xs hidden sm:inline">{c ? c.domains.join(", ") : ""}</span>
+                <span className="flex-1" />
+                {iv.score != null && <span className="chip border-edge text-muted text-[10px]">{iv.score}/10</span>}
+                <span className="text-muted text-xs">{new Date(iv.ended_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>
+                <span className="text-muted">{openPast === iv.id ? "▾" : "▸"}</span>
+              </button>
+              {openPast === iv.id && (
+                <div className="px-5 pb-5 space-y-3 fade-up border-t border-edge pt-4">
+                  {Object.entries(pastFB).map(([name, text]) => (
+                    <div key={name}>
+                      <label className="text-sm text-gold">{name}</label>
+                      <textarea className="input min-h-[60px] mt-1" value={text}
+                        onChange={(e) => setPastFB({ ...pastFB, [name]: e.target.value })} />
+                    </div>
+                  ))}
+                  <input className="input" placeholder="Task assigned"
+                    value={pastFin.tasks_assigned} onChange={(e) => setPastFin({ ...pastFin, tasks_assigned: e.target.value })} />
+                  <div className="flex flex-wrap items-center gap-3">
+                    <input className="input !w-28" type="number" step="0.5" min="0" max="10" placeholder="/10"
+                      value={pastFin.score} onChange={(e) => setPastFin({ ...pastFin, score: e.target.value })} />
+                    <div className="flex gap-2">
+                      {["green", "yellow", "red"].map((t) => (
+                        <button key={t} type="button" onClick={() => setPastFin({ ...pastFin, tag: pastFin.tag === t ? "" : t })}
+                          className={`chip capitalize ${pastFin.tag === t ? tagColor(t) + " ring-1 ring-current" : "border-edge text-muted"}`}>
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="flex-1" />
+                    <button className="btn-gold text-sm" onClick={() => savePast(iv)} disabled={pastSaving}>
+                      {pastSaving ? "Saving…" : "Save changes"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {past.length === 0 && <p className="text-muted text-sm italic">No interviews finished by this panel yet.</p>}
       </div>
     </main>
   );

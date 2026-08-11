@@ -25,7 +25,7 @@ function PanelsInner() {
       supabase.from("panelists").select("*"),
       supabase.from("members").select("*").order("name")
     ]);
-    setPanels(p.data || []);
+    setPanels((p.data || []).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })));
     setSeated(s.data || []);
     setMembers(m.data || []);
   }, []);

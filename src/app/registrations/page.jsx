@@ -16,6 +16,7 @@ function RegistrationsInner() {
   const [autoState, setAutoState] = useState("");
   const [showMail, setShowMail] = useState(false);
   const [mailDays, setMailDays] = useState([]);
+  const [mailTemplate, setMailTemplate] = useState("slot"); // slot | reschedule
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("candidates").select("*").order("created_at", { ascending: false });
@@ -74,7 +75,7 @@ function RegistrationsInner() {
     // current occupancy + unslotted candidates (registration order)
     const occupancy = {};
     rows.forEach((r) => { if (r.slot) occupancy[r.slot] = (occupancy[r.slot] || 0) + 1; });
-    const unslotted = [...rows].filter((r) => !r.slot);
+    const unslotted = [...rows].filter((r) => !r.slot && r.status === "registered"); // skip walk-ins already queued/interviewed
     for (let j = unslotted.length - 1; j > 0; j--) { // shuffle — random slot allocation
       const k = Math.floor(Math.random() * (j + 1));
       [unslotted[j], unslotted[k]] = [unslotted[k], unslotted[j]];
@@ -114,7 +115,7 @@ function RegistrationsInner() {
     const password = window.prompt("Admin password to send slot emails:");
     if (!password) return;
     setMailState("sending");
-    const { data, error } = await supabase.functions.invoke("send-slot-emails", { body: { password, dates: mailDays } });
+    const { data, error } = await supabase.functions.invoke("send-slot-emails", { body: { password, dates: mailDays, template: mailTemplate } });
     if (error) { setMailState(""); return alert("Failed: " + error.message); }
     setMailState("");
     setShowMail(false);
@@ -158,7 +159,15 @@ function RegistrationsInner() {
 
       {showMail && (
         <div className="card p-5 mb-6 fade-up">
-          <p className="font-display text-lg mb-3">Send slot emails <span className="text-muted text-sm font-body">(only to pending candidates on the selected days)</span></p>
+          <p className="font-display text-lg mb-3">Send slot emails <span className="text-muted text-sm font-body">(only to pending candidates on the selected days; interviewed candidates are never emailed)</span></p>
+          <div className="flex gap-2 mb-3">
+            {[["slot", "Normal slot mail"], ["reschedule", "Rescheduled mail"]].map(([v, l]) => (
+              <button key={v} type="button" onClick={() => setMailTemplate(v)}
+                className={`chip ${mailTemplate === v ? "border-gold bg-gold/15 text-gold" : "border-edge text-muted"}`}>
+                {l}
+              </button>
+            ))}
+          </div>
           {Object.keys(pendingByDay).length === 0 ? (
             <p className="text-muted text-sm italic">Nothing pending — everyone with a slot and an email has been notified.</p>
           ) : (

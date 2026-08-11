@@ -71,7 +71,9 @@ function DistributeInner() {
       const busy = queue.some((q) => q.panel_id === p.id && q.status === "in_interview");
       const match = candidate ? expertise.filter((d) => candidate.domains.includes(d)).length : 0;
       return { ...p, members, expertise, waiting, busy, match };
-    }).sort((a, b) => b.match - a.match || a.waiting - b.waiting);
+    }).sort((a, b) => candidate
+      ? (b.match - a.match || a.waiting - b.waiting)
+      : a.name.localeCompare(b.name, undefined, { numeric: true }));
   }, [panels, panelists, queue, candidate]);
 
   async function assignTo(panelId) {
@@ -118,14 +120,19 @@ function DistributeInner() {
                       {live && " · NOW"}
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      {groups[k].map((c) => (
-                        <span key={c.roll_no} className="inline-flex items-center gap-2 bg-card border border-edge rounded-full pl-3 pr-1 py-0.5 text-xs">
-                          <button className="hover:text-gold" onClick={() => { setRoll(c.roll_no); }} title="Load in distributor">
-                            {c.name} <span className="text-muted">({c.phone || c.roll_no})</span>
-                          </button>
-                          <SlotPicker compact value={c.slot} onChange={(v) => reassignSlot(c.roll_no, v)} />
-                        </span>
-                      ))}
+                      {groups[k].map((c) => {
+                        const arrived = c.status !== "registered"; // queued / interviewing / interviewed
+                        return (
+                          <span key={c.roll_no}
+                            className={`inline-flex items-center gap-2 border rounded-full pl-3 pr-1 py-0.5 text-xs ${arrived ? "bg-transparent border-edge/40 opacity-35 line-through" : "bg-card border-edge"}`}
+                            title={arrived ? "Already arrived / interviewed" : "Not arrived yet"}>
+                            <button className="hover:text-gold" onClick={() => { setRoll(c.roll_no); }} title="Load in distributor">
+                              {c.name} <span className="text-muted">({c.phone || c.roll_no})</span>
+                            </button>
+                            {!arrived && <SlotPicker compact value={c.slot} onChange={(v) => reassignSlot(c.roll_no, v)} />}
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
                 );
@@ -185,7 +192,10 @@ function DistributeInner() {
                   return (
                     <div key={entry.id} className={`flex items-center gap-2 text-sm rounded-lg px-2 py-1.5 ${entry.status === "in_interview" ? "bg-gold/10 text-gold" : "bg-panel"}`}>
                       <span className="text-muted text-xs w-4">{entry.status === "in_interview" ? "▶" : i}</span>
-                      <span className="flex-1 truncate">{c ? c.name : entry.roll_no}</span>
+                      <span className="flex-1 truncate">
+                        {c ? c.name : entry.roll_no}
+                        {c && c.domains.length > 0 && <span className="text-muted text-[10px] ml-1.5">{c.domains.join(", ")}</span>}
+                      </span>
                       <select className="bg-transparent text-muted text-xs outline-none cursor-pointer" value=""
                         onChange={(e) => e.target.value && shift(entry, e.target.value)} title="Shift to another panel">
                         <option value="">⇄</option>
