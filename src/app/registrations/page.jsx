@@ -12,7 +12,7 @@ function RegistrationsInner() {
   const [sortBy, setSortBy] = useState("reg"); // reg | slot
   const [sortDir, setSortDir] = useState("desc");
   const [showAuto, setShowAuto] = useState(false);
-  const [auto, setAuto] = useState({ from: "2026-08-10", to: "2026-08-15", start: "18:30", end: "22:00", perSlot: 8, includeMissed: true });
+  const [auto, setAuto] = useState({ from: "2026-08-10", to: "2026-08-15", start: "18:30", end: "22:00", perSlot: 8 });
   const [autoState, setAutoState] = useState("");
   const [showMail, setShowMail] = useState(false);
   const [mailDays, setMailDays] = useState([]);
@@ -61,8 +61,10 @@ function RegistrationsInner() {
   }
 
   async function autoAssign() {
+    if (!confirm("This clears ALL existing slots (except interviewed candidates) and reassigns everyone from scratch. Continue?")) return;
     setAutoState("working");
-    // build all slot times in the window
+    const now = new Date();
+    // slot grid inside the window, future times only
     const [sh, sm] = auto.start.split(":").map(Number);
     const [eh, em] = auto.end.split(":").map(Number);
     const slots = [];
@@ -70,50 +72,35 @@ function RegistrationsInner() {
       for (let t = sh * 60 + sm; t <= eh * 60 + em; t += 15) {
         const dt = new Date(d);
         dt.setHours(Math.floor(t / 60), t % 60, 0, 0);
-        slots.push(dt.toISOString());
+        if (dt > now) slots.push(dt.toISOString());
       }
     }
-    // current occupancy + unslotted candidates (registration order)
-    const occupancy = {};
-    rows.forEach((r) => { if (r.slot) occupancy[r.slot] = (occupancy[r.slot] || 0) + 1; });
-    const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
-    const missed = (r) => r.slot && new Date(r.slot) < dayStart; // slot on a past day, never showed
-    const unslotted = [...rows].filter((r) => r.status === "registered" && (!r.slot || (auto.includeMissed && missed(r))));
-    for (let j = unslotted.length - 1; j > 0; j--) { // shuffle — random slot allocation
+    // pool: everyone not yet interviewed
+    const pool = rows.filter((r) => r.status !== "interviewed");
+    // who already got a slot email earlier -> their new mail should say "rescheduled"
+    const reschedSet = new Set(pool.filter((r) => r.rescheduled || (r.slot && r.slot_emailed_at)).map((r) => r.roll_no));
+    for (let j = pool.length - 1; j > 0; j--) {
       const k = Math.floor(Math.random() * (j + 1));
-      [unslotted[j], unslotted[k]] = [unslotted[k], unslotted[j]];
+      [pool[j], pool[k]] = [pool[k], pool[j]];
     }
+    // wipe all existing slots for the pool
+    await supabase.from("candidates").update({ slot: null, slot_emailed_at: null }).neq("status", "interviewed");
     let i = 0, assigned = 0;
     for (const slot of slots) {
-      const free = auto.perSlot - (occupancy[slot] || 0);
-      if (free <= 0) continue;
-      const batch = unslotted.slice(i, i + free);
+      const batch = pool.slice(i, i + auto.perSlot);
       if (batch.length === 0) break;
-      const resched = batch.filter((r) => r.slot && r.slot_emailed_at); // they were told an earlier slot
-      const fresh = batch.filter((r) => !(r.slot && r.slot_emailed_at));
-      if (fresh.length) await supabase.from("candidates").update({ slot, slot_emailed_at: null }).in("roll_no", fresh.map((r) => r.roll_no));
+      const resched = batch.filter((r) => reschedSet.has(r.roll_no));
+      const fresh = batch.filter((r) => !reschedSet.has(r.roll_no));
+      if (fresh.length) await supabase.from("candidates").update({ slot, slot_emailed_at: null, rescheduled: false }).in("roll_no", fresh.map((r) => r.roll_no));
       if (resched.length) await supabase.from("candidates").update({ slot, slot_emailed_at: null, rescheduled: true }).in("roll_no", resched.map((r) => r.roll_no));
       i += batch.length; assigned += batch.length;
     }
     setAutoState("");
     setShowAuto(false);
-    alert(assigned < unslotted.length
-      ? `Assigned ${assigned}; ${unslotted.length - assigned} didn't fit — widen the window or raise per-slot.`
+    alert(assigned < pool.length
+      ? `Assigned ${assigned}; ${pool.length - assigned} didn't fit — widen the window or raise per-slot.`
       : `Assigned ${assigned} candidate(s).`);
     load();
-  }
-
-  const istDay = (iso) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-  const pendingByDay = rows.filter((r) => r.slot && !r.slot_emailed_at && r.email).reduce((acc, r) => {
-    const d = istDay(r.slot);
-    acc[d] = (acc[d] || 0) + 1;
-    return acc;
-  }, {});
-
-  function openMail() {
-    setMailDays(Object.keys(pendingByDay).sort());
-    setShowMail(!showMail);
-    setShowAuto(false);
   }
 
   async function sendSlotEmails() {
@@ -188,19 +175,15 @@ function RegistrationsInner() {
 
       {showAuto && (
         <div className="card p-5 mb-6 fade-up">
-          <p className="font-display text-lg mb-3">Auto-assign unslotted candidates <span className="text-muted text-sm font-body">(15-min slots, random order)</span></p>
+          <p className="font-display text-lg mb-3">Reshuffle all slots <span className="text-muted text-sm font-body">(clears every slot, then randomly reassigns everyone not yet interviewed into future slots; earlier-emailed candidates get the rescheduled mail)</span></p>
           <div className="flex flex-wrap items-end gap-4">
             <label className="text-xs text-muted">From<br /><input type="date" className="input mt-1 !w-auto" value={auto.from} onChange={(e) => setAuto({ ...auto, from: e.target.value })} /></label>
             <label className="text-xs text-muted">To<br /><input type="date" className="input mt-1 !w-auto" value={auto.to} onChange={(e) => setAuto({ ...auto, to: e.target.value })} /></label>
             <label className="text-xs text-muted">First slot<br /><input type="time" step="900" className="input mt-1 !w-auto" value={auto.start} onChange={(e) => setAuto({ ...auto, start: e.target.value })} /></label>
             <label className="text-xs text-muted">Last slot<br /><input type="time" step="900" className="input mt-1 !w-auto" value={auto.end} onChange={(e) => setAuto({ ...auto, end: e.target.value })} /></label>
-            <label className="text-xs text-muted flex items-center gap-2 pb-3">
-              <input type="checkbox" checked={auto.includeMissed} onChange={(e) => setAuto({ ...auto, includeMissed: e.target.checked })} />
-              also re-slot missed (past-day) candidates
-            </label>
             <label className="text-xs text-muted">Per slot<br /><input type="number" min="1" max="50" className="input mt-1 !w-24" value={auto.perSlot} onChange={(e) => setAuto({ ...auto, perSlot: Number(e.target.value) || 1 })} /></label>
             <button className="btn-gold text-sm" onClick={autoAssign} disabled={autoState === "working"}>
-              {autoState === "working" ? "Assigning…" : (() => { const ds = new Date(); ds.setHours(0,0,0,0); return `Assign ${rows.filter((r) => r.status === "registered" && (!r.slot || (auto.includeMissed && r.slot && new Date(r.slot) < ds))).length} candidates`; })()}
+              {autoState === "working" ? "Assigning…" : `Reshuffle ${rows.filter((r) => r.status !== "interviewed").length} candidates`}
             </button>
           </div>
         </div>
