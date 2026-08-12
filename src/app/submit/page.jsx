@@ -51,7 +51,15 @@ export default function Submit() {
     <main className="min-h-screen px-4 sm:px-6 py-10 max-w-xl mx-auto">
       <Link href="/" className="text-muted text-sm hover:text-gold">&larr; Home</Link>
       <h1 className="font-display text-4xl sm:text-5xl mt-4 mb-1">Task Submission</h1>
-      <p className="text-muted mb-8">Submit links to your completed tasks (Drive, YouTube, Behance, etc.)</p>
+      <p className="text-muted mb-3">Submit links to your completed tasks (Drive, YouTube, Behance, etc.)</p>
+      <div className="flex flex-wrap items-center gap-3 mb-8">
+        <a href="https://docs.google.com/document/d/1aBK18nj4wxiTqk6z8hFYViVuymifKj2hbtXnY6O7GBw/edit?usp=sharing"
+          target="_blank" rel="noopener noreferrer"
+          className="btn-ghost !py-2 text-sm border-gold/40 text-gold hover:bg-gold/10">
+          Task Resources ↗
+        </a>
+        <span className="text-sm text-cream/90">Deadline: <span className="text-gold font-semibold">18th August</span></span>
+      </div>
 
       {state === "lookup" && (
         <form onSubmit={lookup} className="card p-6 sm:p-8 space-y-4 fade-up">
