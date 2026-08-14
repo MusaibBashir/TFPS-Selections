@@ -76,7 +76,7 @@ export default function Home() {
         </a>
 
         <p className="fade-up text-sm sm:text-base mt-6 text-cream/90" style={{ animationDelay: "0.4s" }}>
-          Task submission deadline: <span className="text-gold font-semibold">18th August</span>
+          Task submission deadline: <span className="text-gold font-semibold">19th August</span>
         </p>
 
         <div className="fade-up flex items-center gap-4 mt-12" style={{ animationDelay: "0.45s" }}>

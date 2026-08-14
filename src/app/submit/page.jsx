@@ -5,12 +5,16 @@ import { supabase } from "@/lib/supabase";
 
 const RESOURCES = "https://docs.google.com/document/d/1aBK18nj4wxiTqk6z8hFYViVuymifKj2hbtXnY6O7GBw/edit?usp=sharing";
 
-// accepts drive.google.com/drive/folders/... (with or without query params)
-function isDriveFolder(url) {
+// allowed: Google Drive folder or file, Google Docs/Sheets/Slides, Google Photos, Dropbox
+function isAllowedLink(url) {
   try {
     const u = new URL(url.trim());
-    if (!/^(www\.)?drive\.google\.com$/.test(u.hostname)) return false;
-    return /\/drive\/(u\/\d+\/)?folders\//.test(u.pathname);
+    const h = u.hostname.replace(/^www\./, "");
+    if (h === "drive.google.com") return true;                 // folders and single files
+    if (h === "docs.google.com") return true;                  // docs / sheets / slides
+    if (h === "photos.google.com" || h === "photos.app.goo.gl") return true;
+    if (h === "dropbox.com" || h.endsWith(".dropbox.com")) return true;
+    return false;
   } catch {
     return false;
   }
@@ -37,14 +41,14 @@ export default function Submit() {
   async function submit(e) {
     e.preventDefault();
     setError("");
-    if (!link.trim()) return setError("Please paste your Google Drive folder link.");
-    if (!isDriveFolder(link)) {
-      return setError("That doesn't look like a Google Drive folder link. It should look like https://drive.google.com/drive/folders/…");
+    if (!link.trim()) return setError("Please paste your submission link.");
+    if (!isAllowedLink(link)) {
+      return setError("We only accept Google Drive (folder or file), Google Docs, Google Photos, or Dropbox links.");
     }
     setState("saving");
     const { error: err } = await supabase.from("task_submissions").insert({
       roll_no: candidate.roll_no,
-      links: [{ label: "Drive folder", url: link.trim() }],
+      links: [{ label: "Submission", url: link.trim() }],
       notes: notes.trim() || null
     });
     if (err) { setState("form"); setError(err.message); } else setState("done");
@@ -57,7 +61,7 @@ export default function Submit() {
           <div className="text-5xl mb-4">🏆</div>
           <h1 className="font-display text-3xl mb-2">Task submitted!</h1>
           <p className="text-muted">Your work is linked to your profile, {candidate.name}. Results will be announced soon.</p>
-          <p className="text-muted text-xs mt-4">Double-check that your folder is shared with &quot;Anyone with the link&quot; — we can&apos;t review what we can&apos;t open.</p>
+          <p className="text-muted text-xs mt-4">Double-check that your link is shared with &quot;Anyone with the link&quot; — we can&apos;t review what we can&apos;t open.</p>
           <Link href="/" className="btn-ghost mt-8">Back to home</Link>
         </div>
       </main>
@@ -67,13 +71,13 @@ export default function Submit() {
     <main className="min-h-screen px-4 sm:px-6 py-10 max-w-xl mx-auto">
       <Link href="/" className="text-muted text-sm hover:text-gold">&larr; Home</Link>
       <h1 className="font-display text-4xl sm:text-5xl mt-4 mb-1">Task Submission</h1>
-      <p className="text-muted mb-3">Submit one Google Drive folder containing all your work.</p>
+      <p className="text-muted mb-3">Submit one link containing all your work.</p>
       <div className="flex flex-wrap items-center gap-3 mb-6">
         <a href={RESOURCES} target="_blank" rel="noopener noreferrer"
           className="btn-ghost !py-2 text-sm border-gold/40 text-gold hover:bg-gold/10">
           Task Resources ↗
         </a>
-        <span className="text-sm text-cream/90">Deadline: <span className="text-gold font-semibold">18th August</span></span>
+        <span className="text-sm text-cream/90">Deadline: <span className="text-gold font-semibold">19th August</span></span>
       </div>
 
       {state === "lookup" && (
@@ -92,7 +96,8 @@ export default function Submit() {
           <div className="rounded-xl border border-gold/30 bg-gold/5 p-4 text-sm space-y-2">
             <p className="text-gold font-semibold">Before you submit</p>
             <ul className="text-cream/80 space-y-1.5 list-disc pl-5">
-              <li>Submit a <strong>single Google Drive folder link</strong> — put each task in its own subfolder inside it, clearly named.</li>
+              <li>Submit a <strong>single link</strong> — ideally one Google Drive folder with each task in its own clearly-named subfolder.</li>
+              <li>Accepted: <strong>Google Drive</strong> (folder or file), <strong>Google Docs</strong>, <strong>Google Photos</strong>, or <strong>Dropbox</strong>.</li>
               <li>Set sharing to <strong>&quot;Anyone with the link&quot;</strong>, or we won&apos;t be able to open your work and it can&apos;t be evaluated.</li>
             </ul>
             <button type="button" className="text-gold text-xs hover:underline" onClick={() => setShowHelp(!showHelp)}>
@@ -100,8 +105,8 @@ export default function Submit() {
             </button>
             {showHelp && (
               <ol className="text-cream/80 text-xs space-y-1 list-decimal pl-5 pt-1">
-                <li>Open the folder in Google Drive.</li>
-                <li>Right-click the folder → <strong>Share</strong> (or click Share at the top).</li>
+                <li>Open the folder or file in Google Drive (Dropbox: open the folder and click <strong>Share</strong>).</li>
+                <li>Right-click it → <strong>Share</strong> (or click Share at the top).</li>
                 <li>Under <strong>General access</strong>, change &quot;Restricted&quot; to <strong>&quot;Anyone with the link&quot;</strong>.</li>
                 <li>Keep the role as <strong>Viewer</strong>, then click <strong>Copy link</strong> and <strong>Done</strong>.</li>
                 <li>Paste that link below. Tip: open it in an incognito window to confirm it works.</li>
@@ -110,8 +115,9 @@ export default function Submit() {
           </div>
 
           <div>
-            <label className="text-sm text-muted">Google Drive folder link *</label>
+            <label className="text-sm text-muted">Submission link *</label>
             <input className="input mt-1" placeholder="https://drive.google.com/drive/folders/…" value={link} onChange={(e) => setLink(e.target.value)} />
+            <p className="text-muted text-xs mt-1">Google Drive · Google Docs · Google Photos · Dropbox</p>
           </div>
 
           <div>
