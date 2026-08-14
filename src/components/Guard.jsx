@@ -16,6 +16,7 @@ export default function Guard({ children, admin = false }) {
   const [session, setSessionState] = useState(undefined);
   const [regCount, setRegCount] = useState(null);
   const [todayCount, setTodayCount] = useState(null);
+  const [totalCount, setTotalCount] = useState(null);
   const [panels, setPanels] = useState([]);
   const [mySeat, setMySeat] = useState(null); // my panelists row
   const router = useRouter();
@@ -31,16 +32,18 @@ export default function Guard({ children, admin = false }) {
   const loadSeat = useCallback(async (s) => {
     const dayStart = new Date();
     dayStart.setHours(0, 0, 0, 0);
-    const [p, seat, cnt, iv] = await Promise.all([
+    const [p, seat, cnt, iv, ivAll] = await Promise.all([
       supabase.from("panels").select("*").neq("status", "closed").order("created_at"),
       supabase.from("panelists").select("*").eq("member_roll", s.roll_no).maybeSingle(),
       supabase.from("candidates").select("*", { count: "exact", head: true }),
-      supabase.from("interviews").select("*", { count: "exact", head: true }).gte("ended_at", dayStart.toISOString())
+      supabase.from("interviews").select("*", { count: "exact", head: true }).gte("ended_at", dayStart.toISOString()),
+      supabase.from("interviews").select("*", { count: "exact", head: true }).not("ended_at", "is", null)
     ]);
     setPanels((p.data || []).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })));
     setMySeat(seat.data || null);
     setRegCount(cnt.count);
     setTodayCount(iv.count);
+    setTotalCount(ivAll.count);
   }, []);
 
   useEffect(() => {
@@ -89,6 +92,11 @@ export default function Guard({ children, admin = false }) {
         {todayCount != null && (
           <span className="chip border-edge text-cream mr-2 whitespace-nowrap" title="Interviews completed today">
             {todayCount} today
+          </span>
+        )}
+        {totalCount != null && session.role === "admin" && (
+          <span className="chip border-gold/40 text-gold mr-2 whitespace-nowrap" title="Total interviews completed">
+            {totalCount} interviews
           </span>
         )}
         {regCount != null && session.role === "admin" && (
