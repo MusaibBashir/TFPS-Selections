@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import Guard from "@/components/Guard";
-import { supabase, getSession, tagColor, DOMAINS } from "@/lib/supabase";
+import { supabase, getSession, tagColor, DOMAINS, getFeedbackEditing } from "@/lib/supabase";
 
 function PanelInner() {
   const { id } = useParams();
@@ -26,6 +26,7 @@ function PanelInner() {
   const [pastFB, setPastFB] = useState({});
   const [pastFin, setPastFin] = useState({ score: "", tag: "", tasks_assigned: "" });
   const [pastSaving, setPastSaving] = useState(false);
+  const [fbEditing, setFbEditing] = useState(true);
   const loadedFor = useRef(null);
   const timers = useRef({});
   const dirty = useRef({}); // boxes with unsaved local edits
@@ -78,6 +79,14 @@ function PanelInner() {
       loadedFor.current = null;
     }
   }, [id]);
+
+  useEffect(() => {
+    getFeedbackEditing().then(setFbEditing);
+    const st = supabase.channel("settings-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "app_settings" }, () => getFeedbackEditing().then(setFbEditing))
+      .subscribe();
+    return () => supabase.removeChannel(st);
+  }, []);
 
   useEffect(() => {
     load();
@@ -384,28 +393,29 @@ function PanelInner() {
               </button>
               {openPast === iv.id && (
                 <div className="px-5 pb-5 space-y-3 fade-up border-t border-edge pt-4">
+                  {!fbEditing && <p className="text-yellow text-xs">Editing is locked by an admin — showing saved reviews read-only.</p>}
                   {Object.entries(pastFB).map(([name, text]) => (
                     <div key={name}>
                       <label className="text-sm text-gold">{name}</label>
-                      <textarea className="input min-h-[60px] mt-1" value={text}
+                      <textarea className="input min-h-[60px] mt-1" value={text} disabled={!fbEditing}
                         onChange={(e) => setPastFB({ ...pastFB, [name]: e.target.value })} />
                     </div>
                   ))}
-                  <input className="input" placeholder="Task assigned"
+                  <input className="input" placeholder="Task assigned" disabled={!fbEditing}
                     value={pastFin.tasks_assigned} onChange={(e) => setPastFin({ ...pastFin, tasks_assigned: e.target.value })} />
                   <div className="flex flex-wrap items-center gap-3">
-                    <input className="input !w-28" type="number" step="0.5" min="0" max="10" placeholder="/10"
+                    <input className="input !w-28" type="number" step="0.5" min="0" max="10" placeholder="/10" disabled={!fbEditing}
                       value={pastFin.score} onChange={(e) => setPastFin({ ...pastFin, score: e.target.value })} />
                     <div className="flex gap-2">
                       {["green", "yellow", "red"].map((t) => (
-                        <button key={t} type="button" onClick={() => setPastFin({ ...pastFin, tag: pastFin.tag === t ? "" : t })}
+                        <button key={t} type="button" disabled={!fbEditing} onClick={() => setPastFin({ ...pastFin, tag: pastFin.tag === t ? "" : t })}
                           className={`chip capitalize ${pastFin.tag === t ? tagColor(t) + " ring-1 ring-current" : "border-edge text-muted"}`}>
                           {t}
                         </button>
                       ))}
                     </div>
                     <span className="flex-1" />
-                    <button className="btn-gold text-sm" onClick={() => savePast(iv)} disabled={pastSaving}>
+                    <button className="btn-gold text-sm" onClick={() => savePast(iv)} disabled={pastSaving || !fbEditing}>
                       {pastSaving ? "Saving…" : "Save changes"}
                     </button>
                   </div>

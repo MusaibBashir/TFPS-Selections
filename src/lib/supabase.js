@@ -48,3 +48,12 @@ export function setSession(s) {
 export function clearSession() {
   localStorage.removeItem("tfps_session");
 }
+
+// admin-controlled toggle: can panels edit interview feedback?
+export async function getFeedbackEditing() {
+  const { data } = await supabase.from("app_settings").select("value").eq("key", "panel_feedback_editing").maybeSingle();
+  return data ? data.value : true;
+}
+export async function setFeedbackEditing(value) {
+  await supabase.from("app_settings").upsert({ key: "panel_feedback_editing", value, updated_at: new Date().toISOString() }, { onConflict: "key" });
+}

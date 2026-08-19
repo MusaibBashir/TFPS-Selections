@@ -13,6 +13,8 @@ function ReviewInner() {
   const [evalDraft, setEvalDraft] = useState({ score: "", feedback: "" });
   const [sortBy, setSortBy] = useState("newest"); // newest | color | avg | tasks
   const [sortDir, setSortDir] = useState("desc");
+  const [onlyInterviewed, setOnlyInterviewed] = useState(false);
+  const [reviewedByMe, setReviewedByMe] = useState("");  // "" | "yes" | "no"
   const session = getSession();
 
   const load = useCallback(async () => {
@@ -44,6 +46,12 @@ function ReviewInner() {
     const ivTag = r.final_tag || r.interviews[0]?.tag;
     if (filterTag && ivTag !== filterTag) return false;
     if (filterDomain && !r.domains.includes(filterDomain)) return false;
+    if (onlyInterviewed && r.interviews.length === 0) return false;
+    if (reviewedByMe) {
+      const mine = session && r.evals.some((e) => e.evaluator === session.name);
+      if (reviewedByMe === "yes" && !mine) return false;
+      if (reviewedByMe === "no" && mine) return false;
+    }
     if (search) {
       const s = search.toLowerCase();
       if (!r.name.toLowerCase().includes(s) && !r.roll_no.toLowerCase().includes(s)) return false;
@@ -71,7 +79,7 @@ function ReviewInner() {
       return (new Date(b.created_at) - new Date(a.created_at)) * dir;
     }
     return 0;
-  }), [rows, filterTag, filterDomain, search, sortBy, sortDir]);
+  }), [rows, filterTag, filterDomain, search, sortBy, sortDir, onlyInterviewed, reviewedByMe, session]);
 
   async function setFinalTag(roll_no, tag) {
     await supabase.from("candidates").update({ final_tag: tag }).eq("roll_no", roll_no);
@@ -129,6 +137,15 @@ function ReviewInner() {
         <select className="input !w-auto" value={filterDomain} onChange={(e) => setFilterDomain(e.target.value)}>
           <option value="">All domains</option>
           {DOMAINS.map((d) => <option key={d}>{d}</option>)}
+        </select>
+        <button onClick={() => setOnlyInterviewed(!onlyInterviewed)}
+          className={`chip ${onlyInterviewed ? "border-gold bg-gold/15 text-gold" : "border-edge text-muted"}`}>
+          Interviewed
+        </button>
+        <select className="input !w-auto" value={reviewedByMe} onChange={(e) => setReviewedByMe(e.target.value)}>
+          <option value="">Reviewed by me: any</option>
+          <option value="yes">Reviewed by me</option>
+          <option value="no">Not reviewed by me</option>
         </select>
         <div className="flex gap-1.5">
           {["green", "yellow", "red"].map((t) => (

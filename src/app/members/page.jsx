@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import Guard from "@/components/Guard";
-import { supabase, DOMAINS } from "@/lib/supabase";
+import { supabase, DOMAINS, getFeedbackEditing, setFeedbackEditing } from "@/lib/supabase";
 
 function fmtDur(ms) {
   if (!ms) return "—";
@@ -13,6 +13,7 @@ function fmtDur(ms) {
 function MembersInner() {
   const [members, setMembers] = useState([]);
   const [stats, setStats] = useState({});
+  const [fbEditing, setFbEditing] = useState(true);
   const [draft, setDraft] = useState({ roll_no: "", name: "", email: "", domains: [] });
   const [editing, setEditing] = useState(null); // roll_no being edited
   const [edit, setEdit] = useState({ email: "", domains: [] });
@@ -36,7 +37,13 @@ function MembersInner() {
     });
     setStats(st);
   }, []);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); getFeedbackEditing().then(setFbEditing); }, [load]);
+
+  async function toggleFbEditing() {
+    const next = !fbEditing;
+    setFbEditing(next);
+    await setFeedbackEditing(next);
+  }
 
   async function add(e) {
     e.preventDefault();
@@ -79,7 +86,22 @@ function MembersInner() {
   return (
     <main className="px-4 sm:px-6 py-8 max-w-4xl mx-auto">
       <h1 className="font-display text-3xl sm:text-4xl mb-2">Members</h1>
-      <p className="text-muted mb-6">Only these roll numbers can log in as panelist or admin.</p>
+      <p className="text-muted mb-4">Only these roll numbers can log in as panelist or admin.</p>
+
+      <div className="card p-4 mb-6 flex flex-wrap items-center gap-3">
+        <div className="flex-1 min-w-[220px]">
+          <p className="font-medium">Panel feedback editing</p>
+          <p className="text-muted text-xs">
+            {fbEditing
+              ? "Panels can write and edit interview reviews, scores and colours."
+              : "Locked — panels can view past interviews but cannot change anything."}
+          </p>
+        </div>
+        <button onClick={toggleFbEditing}
+          className={`btn ${fbEditing ? "bg-green/15 text-green border border-green/40" : "bg-red/15 text-red border border-red/40"}`}>
+          {fbEditing ? "● Unlocked" : "■ Locked"}
+        </button>
+      </div>
 
       {Object.keys(stats).length > 0 && (
         <div className="card overflow-x-auto mb-8">
