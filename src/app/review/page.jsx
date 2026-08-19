@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Guard from "@/components/Guard";
-import { supabase, getSession, tagColor, DOMAINS } from "@/lib/supabase";
+import { supabase, getSession, tagColor, DOMAINS, getLocks } from "@/lib/supabase";
 
 function ReviewInner() {
   const [rows, setRows] = useState([]);
@@ -15,6 +15,7 @@ function ReviewInner() {
   const [sortDir, setSortDir] = useState("desc");
   const [onlyInterviewed, setOnlyInterviewed] = useState(false);
   const [reviewedByMe, setReviewedByMe] = useState("");  // "" | "yes" | "no"
+  const [taskEditing, setTaskEditing] = useState(true);
   const session = getSession();
 
   const load = useCallback(async () => {
@@ -35,7 +36,14 @@ function ReviewInner() {
     })));
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    getLocks().then((l) => setTaskEditing(l.task));
+    const st = supabase.channel("settings-review")
+      .on("postgres_changes", { event: "*", schema: "public", table: "app_settings" }, () => getLocks().then((l) => setTaskEditing(l.task)))
+      .subscribe();
+    return () => supabase.removeChannel(st);
+  }, [load]);
 
   const avgOf = (r) => {
     const scores = r.evals.filter((e) => e.score != null).map((e) => Number(e.score));
@@ -312,18 +320,19 @@ function ReviewInner() {
               </div>
             ))}
             <div className="bg-panel rounded-xl p-4 mt-2 space-y-3">
+              {!taskEditing && <p className="text-yellow text-xs">Task reviews are locked by an admin — read-only.</p>}
               <div className="flex items-center gap-3">
                 <span className="chip border-edge text-muted shrink-0">Reviewing as {session?.name}</span>
-                <input className="input !w-28" type="number" step="0.5" min="0" max="10" placeholder="/10" value={evalDraft.score} onChange={(e) => setEvalDraft({ ...evalDraft, score: e.target.value })} />
+                <input className="input !w-28" type="number" step="0.5" min="0" max="10" placeholder="/10" disabled={!taskEditing} value={evalDraft.score} onChange={(e) => setEvalDraft({ ...evalDraft, score: e.target.value })} />
               </div>
-              <textarea className="input min-h-[70px]" placeholder="Your feedback…" value={evalDraft.feedback} onChange={(e) => setEvalDraft({ ...evalDraft, feedback: e.target.value })} />
-              <button className="btn-ghost text-sm" onClick={() => saveEval(openRow.roll_no)}>Save evaluation</button>
+              <textarea className="input min-h-[70px]" placeholder="Your feedback…" disabled={!taskEditing} value={evalDraft.feedback} onChange={(e) => setEvalDraft({ ...evalDraft, feedback: e.target.value })} />
+              <button className="btn-ghost text-sm" disabled={!taskEditing} onClick={() => saveEval(openRow.roll_no)}>Save evaluation</button>
             </div>
 
             <div className="flex items-center gap-2 mt-6 pt-4 border-t border-edge">
               <span className="text-muted text-sm mr-2">Final status:</span>
               {["green", "yellow", "red"].map((t) => (
-                <button key={t} onClick={() => setFinalTag(openRow.roll_no, openRow.final_tag === t ? null : t)}
+                <button key={t} disabled={!taskEditing} onClick={() => setFinalTag(openRow.roll_no, openRow.final_tag === t ? null : t)}
                   className={`chip capitalize ${openRow.final_tag === t ? tagColor(t) + " ring-1 ring-current" : "border-edge text-muted hover:text-cream"}`}>
                   {t}
                 </button>

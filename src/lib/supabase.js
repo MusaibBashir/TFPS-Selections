@@ -49,11 +49,18 @@ export function clearSession() {
   localStorage.removeItem("tfps_session");
 }
 
-// admin-controlled toggle: can panels edit interview feedback?
-export async function getFeedbackEditing() {
-  const { data } = await supabase.from("app_settings").select("value").eq("key", "panel_feedback_editing").maybeSingle();
-  return data ? data.value : true;
+// admin-controlled editing locks
+export async function getLocks() {
+  const { data } = await supabase.from("app_settings").select("key,value");
+  const map = Object.fromEntries((data || []).map((r) => [r.key, r.value]));
+  return {
+    interview: map.panel_feedback_editing ?? true, // panel interview reviews
+    task: map.task_review_editing ?? true          // task reviews on the review board
+  };
 }
-export async function setFeedbackEditing(value) {
-  await supabase.from("app_settings").upsert({ key: "panel_feedback_editing", value, updated_at: new Date().toISOString() }, { onConflict: "key" });
+export async function setLock(key, value) {
+  await supabase.from("app_settings").upsert(
+    { key, value, updated_at: new Date().toISOString() },
+    { onConflict: "key" }
+  );
 }

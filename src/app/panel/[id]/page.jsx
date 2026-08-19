@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import Guard from "@/components/Guard";
-import { supabase, getSession, tagColor, DOMAINS, getFeedbackEditing } from "@/lib/supabase";
+import { supabase, getSession, tagColor, DOMAINS, getLocks } from "@/lib/supabase";
 
 function PanelInner() {
   const { id } = useParams();
@@ -81,9 +81,9 @@ function PanelInner() {
   }, [id]);
 
   useEffect(() => {
-    getFeedbackEditing().then(setFbEditing);
+    getLocks().then((l) => setFbEditing(l.interview));
     const st = supabase.channel("settings-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "app_settings" }, () => getFeedbackEditing().then(setFbEditing))
+      .on("postgres_changes", { event: "*", schema: "public", table: "app_settings" }, () => getLocks().then((l) => setFbEditing(l.interview)))
       .subscribe();
     return () => supabase.removeChannel(st);
   }, []);
