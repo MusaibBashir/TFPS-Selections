@@ -68,6 +68,7 @@ function CanvasInner() {
   const [open, setOpen] = useState(null);        // roll_no shown in the modal
   const [infoSet, setInfoSet] = useState(null);  // set id whose breakdown is expanded
   const [dragOver, setDragOver] = useState(null);
+  const [exportKind, setExportKind] = useState(null); // null | 'partial' | 'full'
 
   const [search, setSearch] = useState("");
   const [filterTag, setFilterTag] = useState("");
@@ -295,6 +296,19 @@ function CanvasInner() {
     overridden: !!r.assigned_domains?.length
   });
 
+  // people not in any set, matching what the master list actually shows
+  const unassignedReviewed = useMemo(
+    () => cands.filter((r) => !r.set_id && r.evals.length > 0),
+    [cands]
+  );
+
+  function runExport(list, label) {
+    const slug = label.replace(/\W+/g, "-").replace(/^-|-$/g, "").toLowerCase();
+    if (exportKind === "partial") exportPartial(list, `tfps-${slug}-partial.csv`);
+    else exportFull(list, `tfps-${slug}-full.csv`);
+    setExportKind(null);
+  }
+
   // how many of the highlighted people are currently sitting inside a set
   const selectedInSets = useMemo(
     () => cands.filter((r) => sel.has(r.roll_no) && r.set_id).length,
@@ -315,8 +329,8 @@ function CanvasInner() {
             <button className="text-muted hover:text-cream text-sm" onClick={() => setSel(new Set())}>clear</button>
           </>
         )}
-        <button className="btn-ghost text-xs" onClick={() => exportPartial(cands, "tfps-canvas-partial.csv")}>Export partial</button>
-        <button className="btn-ghost text-xs" onClick={() => exportFull(cands, "tfps-canvas-full.csv")}>Export full</button>
+        <button className="btn-ghost text-xs" onClick={() => setExportKind("partial")}>Export partial</button>
+        <button className="btn-ghost text-xs" onClick={() => setExportKind("full")}>Export full</button>
         <button className="btn-gold text-xs" onClick={addSet}>+ New set</button>
       </div>
 
@@ -457,6 +471,53 @@ function CanvasInner() {
           )}
         </div>
       </div>
+
+      {/* ---------------- export scope picker ---------------- */}
+      {exportKind && (
+        <div className="fixed inset-0 z-50 bg-ink/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setExportKind(null)}>
+          <div className="card p-6 max-w-md w-full fade-up" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 mb-1">
+              <h2 className="font-display text-2xl capitalize">Export {exportKind} CSV</h2>
+              <button className="text-muted hover:text-cream text-xl" onClick={() => setExportKind(null)}>✕</button>
+            </div>
+            <p className="text-muted text-sm mb-4">Which set do you want?</p>
+
+            <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+              {sets.map((s) => {
+                const n = (bySet[s.id] || []).length;
+                return (
+                  <button key={s.id} disabled={n === 0}
+                    onClick={() => runExport(bySet[s.id] || [], s.name)}
+                    className="w-full flex items-center gap-3 rounded-xl border border-edge bg-panel px-4 py-3 text-left
+                               hover:border-gold/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                    <span className="flex-1 font-medium truncate">{s.name}</span>
+                    <span className="chip border-edge text-muted text-[10px]">{n}</span>
+                  </button>
+                );
+              })}
+              {sets.length === 0 && (
+                <p className="text-muted text-sm italic py-2">No sets yet — create one to export it separately.</p>
+              )}
+
+              <div className="pt-2 mt-2 border-t border-edge space-y-2">
+                <button onClick={() => runExport(unassignedReviewed, "master-list")}
+                  className="w-full flex items-center gap-3 rounded-xl border border-edge bg-panel px-4 py-3 text-left
+                             hover:border-gold/60 transition-colors">
+                  <span className="flex-1">Master list <span className="text-muted text-xs">· not in any set</span></span>
+                  <span className="chip border-edge text-muted text-[10px]">{unassignedReviewed.length}</span>
+                </button>
+                <button onClick={() => runExport(cands, "everyone")}
+                  className="w-full flex items-center gap-3 rounded-xl border border-edge bg-panel px-4 py-3 text-left
+                             hover:border-gold/60 transition-colors">
+                  <span className="flex-1">Everyone <span className="text-muted text-xs">· all candidates, reviewed or not</span></span>
+                  <span className="chip border-edge text-muted text-[10px]">{cands.length}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ---------------- person modal ---------------- */}
       {openRow && (
