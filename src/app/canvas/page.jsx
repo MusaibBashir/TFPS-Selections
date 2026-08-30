@@ -19,6 +19,46 @@ function download(name, head, lines) {
   a.click();
 }
 
+// Defined at module scope on purpose: nesting this inside CanvasInner would make
+// React see a new component type every render and remount all ~500 rows, which
+// breaks double-click detection mid-gesture and drags badly.
+function Person({ r, compact, selected, onToggle, onOpen, onDragStart, final, avg, adm, domains, overridden }) {
+  return (
+    <div
+      draggable
+      onDragStart={(e) => onDragStart(e, r.roll_no)}
+      onClick={() => onToggle(r.roll_no)}
+      onDoubleClick={(e) => { e.preventDefault(); onOpen(r.roll_no); }}
+      title="Click to select · double-click for full details · drag to a set"
+      className={`group rounded-xl border px-3 py-2 cursor-pointer transition-colors select-none ${
+        selected ? "border-gold bg-gold/15" : "border-edge bg-panel hover:border-gold/40"}`}>
+      <div className="flex items-center gap-2">
+        <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+          style={{ background: DOT[r.final_tag] || "#2b2721" }} />
+        <span className="font-medium text-sm truncate flex-1">{r.name}</span>
+        <button onClick={(e) => { e.stopPropagation(); onOpen(r.roll_no); }}
+          className="text-muted hover:text-gold text-xs opacity-60 hover:opacity-100 shrink-0"
+          title="Full details">ⓘ</button>
+      </div>
+      <div className="flex items-center gap-2 mt-1 text-[11px] text-muted">
+        <span className="truncate">{r.roll_no}</span>
+        <span className="flex-1" />
+        <span className="text-gold/90 shrink-0" title="Final rating">{num(final)}</span>
+        <span className="shrink-0" title="Overall avg / admin avg">({num(avg)}/{num(adm)})</span>
+      </div>
+      {!compact && (
+        <div className="flex flex-wrap gap-1 mt-1">
+          {domains.slice(0, 3).map((d) => (
+            <span key={d} className={`chip text-[9px] !px-1.5 !py-0 ${
+              overridden ? "border-gold/40 text-gold/90" : "border-edge text-muted"}`}>{d}</span>
+          ))}
+          {domains.length > 3 && <span className="text-[9px] text-muted">+{domains.length - 3}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CanvasInner() {
   const [cands, setCands] = useState([]);
   const [sets, setSets] = useState([]);
@@ -33,6 +73,8 @@ function CanvasInner() {
   const [filterTag, setFilterTag] = useState("");
   const [filterDomain, setFilterDomain] = useState("");
   const [unassignedOnly, setUnassignedOnly] = useState(true);
+  const [sortBy, setSortBy] = useState("name");   // name | avg | admin | final | colour
+  const [sortDir, setSortDir] = useState("asc");
 
   const load = useCallback(async () => {
     const [c, ev, iv, fb, ts, mem, st] = await Promise.all([
@@ -96,14 +138,42 @@ function CanvasInner() {
 
   const masterList = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return cands.filter((r) => {
+    const list = cands.filter((r) => {
       if (unassignedOnly && r.set_id) return false;
       if (filterTag && r.final_tag !== filterTag) return false;
       if (filterDomain && !effDomains(r).includes(filterDomain)) return false;
       if (q && !r.name.toLowerCase().includes(q) && !r.roll_no.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [cands, search, filterTag, filterDomain, unassignedOnly]);
+
+    const dir = sortDir === "desc" ? 1 : -1;
+    // Unscored people sink to the bottom either way — flipping direction should
+    // reorder the people who have scores, not surface the ones who have none.
+    const byNum = (av, bv) => {
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      return (bv - av) * dir;
+    };
+    const ord = { green: 0, yellow: 1, red: 2 };
+
+    return [...list].sort((a, b) => {
+      if (sortBy === "avg") return byNum(avgAll(a), avgAll(b)) || a.name.localeCompare(b.name);
+      if (sortBy === "admin") return byNum(avgAdmin(a), avgAdmin(b)) || a.name.localeCompare(b.name);
+      if (sortBy === "final") return byNum(finalOf(a), finalOf(b)) || a.name.localeCompare(b.name);
+      if (sortBy === "colour") {
+        const ta = ord[a.final_tag] ?? 3, tb = ord[b.final_tag] ?? 3;
+        return ((ta - tb) * -dir) || a.name.localeCompare(b.name);
+      }
+      return a.name.localeCompare(b.name) * (sortDir === "asc" ? 1 : -1);
+    });
+  }, [cands, search, filterTag, filterDomain, unassignedOnly, sortBy, sortDir, avgAll, avgAdmin, finalOf]);
+
+  // highest-first makes sense for scores, A→Z for names
+  function changeSort(next) {
+    setSortBy(next);
+    setSortDir(next === "name" ? "asc" : "desc");
+  }
 
   // ---- mutations ------------------------------------------------------
   async function addSet() {
@@ -208,47 +278,25 @@ function CanvasInner() {
     download(file, head, lines);
   }
 
-  // ---- person chip ----------------------------------------------------
-  function Person({ r, compact }) {
-    const on = sel.has(r.roll_no);
-    const f = finalOf(r);
-    return (
-      <div
-        draggable
-        onDragStart={(e) => onDragStart(e, r.roll_no)}
-        onClick={() => toggleSel(r.roll_no)}
-        onDoubleClick={() => setOpen(r.roll_no)}
-        title="Click to select · double-click for full details · drag to a set"
-        className={`group rounded-xl border px-3 py-2 cursor-pointer transition-colors ${
-          on ? "border-gold bg-gold/15" : "border-edge bg-panel hover:border-gold/40"}`}>
-        <div className="flex items-center gap-2">
-          <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
-            style={{ background: DOT[r.final_tag] || "#2b2721" }} />
-          <span className="font-medium text-sm truncate flex-1">{r.name}</span>
-          <button onClick={(e) => { e.stopPropagation(); setOpen(r.roll_no); }}
-            className="text-muted hover:text-gold text-xs opacity-0 group-hover:opacity-100 shrink-0"
-            title="Full details">ⓘ</button>
-        </div>
-        <div className="flex items-center gap-2 mt-1 text-[11px] text-muted">
-          <span className="truncate">{r.roll_no}</span>
-          <span className="flex-1" />
-          <span className="text-gold/90 shrink-0" title="Final rating">{num(f)}</span>
-          <span className="shrink-0" title="Overall avg / admin avg">
-            ({num(avgAll(r))}/{num(avgAdmin(r))})
-          </span>
-        </div>
-        {!compact && (
-          <div className="flex flex-wrap gap-1 mt-1">
-            {effDomains(r).slice(0, 3).map((d) => (
-              <span key={d} className={`chip text-[9px] !px-1.5 !py-0 ${
-                r.assigned_domains?.length ? "border-gold/40 text-gold/90" : "border-edge text-muted"}`}>{d}</span>
-            ))}
-            {effDomains(r).length > 3 && <span className="text-[9px] text-muted">+{effDomains(r).length - 3}</span>}
-          </div>
-        )}
-      </div>
-    );
-  }
+  // shared props for every person chip, so the two lists stay in sync
+  const chip = (r) => ({
+    r,
+    selected: sel.has(r.roll_no),
+    onToggle: toggleSel,
+    onOpen: setOpen,
+    onDragStart,
+    final: finalOf(r),
+    avg: avgAll(r),
+    adm: avgAdmin(r),
+    domains: effDomains(r),
+    overridden: !!r.assigned_domains?.length
+  });
+
+  // how many of the highlighted people are currently sitting inside a set
+  const selectedInSets = useMemo(
+    () => cands.filter((r) => sel.has(r.roll_no) && r.set_id).length,
+    [cands, sel]
+  );
 
   const openRow = cands.find((r) => r.roll_no === open);
 
@@ -279,6 +327,13 @@ function CanvasInner() {
             <h2 className="font-display text-xl flex-1">Master list</h2>
             <span className="text-muted text-xs">{masterList.length}</span>
           </div>
+          {/* selection may include people sitting in sets — this pulls them back out */}
+          {selectedInSets > 0 && (
+            <button className="btn-gold w-full text-xs !py-1.5 mb-2"
+              onClick={() => moveTo([...sel], null)}>
+              ← Send {selectedInSets} back to master
+            </button>
+          )}
           <input className="input !py-2 text-sm mb-2" placeholder="Search name / roll…"
             value={search} onChange={(e) => setSearch(e.target.value)} />
           <div className="flex flex-wrap gap-1.5 mb-2">
@@ -291,14 +346,27 @@ function CanvasInner() {
               Unassigned only
             </button>
           </div>
-          <select className="input !py-2 text-sm mb-3" value={filterDomain} onChange={(e) => setFilterDomain(e.target.value)}>
+          <select className="input !py-2 text-sm mb-2" value={filterDomain} onChange={(e) => setFilterDomain(e.target.value)}>
             <option value="">All domains</option>
             {DOMAINS.map((d) => <option key={d}>{d}</option>)}
           </select>
+          <div className="flex gap-2 mb-3">
+            <select className="input !py-2 text-sm flex-1" value={sortBy} onChange={(e) => changeSort(e.target.value)}>
+              <option value="name">Sort: Name</option>
+              <option value="avg">Sort: Avg score</option>
+              <option value="admin">Sort: Admin score</option>
+              <option value="final">Sort: Final rating</option>
+              <option value="colour">Sort: Final colour</option>
+            </select>
+            <button className="btn-ghost !px-3 !py-2 text-sm shrink-0" title="Flip sort direction"
+              onClick={() => setSortDir(sortDir === "desc" ? "asc" : "desc")}>
+              {sortDir === "desc" ? "↓" : "↑"}
+            </button>
+          </div>
 
           <div className={`space-y-1.5 max-h-[64vh] overflow-y-auto pr-1 rounded-lg ${
             dragOver === "__none" ? "ring-1 ring-gold/60" : ""}`}>
-            {masterList.map((r) => <Person key={r.roll_no} r={r} />)}
+            {masterList.map((r) => <Person key={r.roll_no} {...chip(r)} />)}
             {masterList.length === 0 && (
               <p className="text-muted text-sm italic py-6 text-center">Nobody matches these filters.</p>
             )}
@@ -366,7 +434,7 @@ function CanvasInner() {
                 )}
 
                 <div className="space-y-1.5 mt-3 min-h-[80px] max-h-[52vh] overflow-y-auto pr-1">
-                  {list.map((r) => <Person key={r.roll_no} r={r} compact />)}
+                  {list.map((r) => <Person key={r.roll_no} {...chip(r)} compact />)}
                   {list.length === 0 && (
                     <p className="text-muted text-xs italic py-6 text-center">
                       Drag people here, or select and press Move.
