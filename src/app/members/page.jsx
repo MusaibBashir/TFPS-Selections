@@ -10,9 +10,28 @@ function fmtDur(ms) {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
+function Collapsible({ title, count, open, onToggle, children }) {
+  return (
+    <div className="card mb-4 overflow-hidden">
+      <button onClick={onToggle}
+        className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-panel/60 transition-colors">
+        <span className="font-display text-xl flex-1">
+          {title} {count != null && <span className="text-muted text-base">({count})</span>}
+        </span>
+        <span className={`text-muted transition-transform ${open ? "rotate-180" : ""}`}>▾</span>
+      </button>
+      {open && <div className="overflow-x-auto border-t border-edge">{children}</div>}
+    </div>
+  );
+}
+
 function MembersInner() {
   const [members, setMembers] = useState([]);
   const [stats, setStats] = useState({});
+  const [reviewStats, setReviewStats] = useState({});
+  const [showIv, setShowIv] = useState(false);
+  const [showRv, setShowRv] = useState(false);
+  const [search, setSearch] = useState("");
   const [locks, setLocks] = useState({ interview: true, task: true });
   const [draft, setDraft] = useState({ roll_no: "", name: "", email: "", domains: [] });
   const [editing, setEditing] = useState(null); // roll_no being edited
@@ -20,11 +39,13 @@ function MembersInner() {
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
-    const [{ data }, { data: ivs }] = await Promise.all([
+    const [{ data }, { data: ivs }, { data: evs }] = await Promise.all([
       supabase.from("members").select("*").order("name"),
-      supabase.from("interviews").select("panelist_names,started_at,ended_at").not("ended_at", "is", null)
+      supabase.from("interviews").select("panelist_names,started_at,ended_at").not("ended_at", "is", null),
+      supabase.from("evaluations").select("evaluator,score")
     ]);
     setMembers(data || []);
+
     const st = {};
     (ivs || []).forEach((iv) => {
       const dur = new Date(iv.ended_at) - new Date(iv.started_at);
@@ -36,6 +57,17 @@ function MembersInner() {
       });
     });
     setStats(st);
+
+    // who reviewed how many task submissions, and how they scored
+    const rv = {};
+    (evs || []).forEach((e) => {
+      const who = e.evaluator;
+      if (!who) return;
+      if (!rv[who]) rv[who] = { count: 0, scored: 0, total: 0 };
+      rv[who].count += 1;
+      if (e.score != null) { rv[who].scored += 1; rv[who].total += Number(e.score); }
+    });
+    setReviewStats(rv);
   }, []);
   useEffect(() => { load(); getLocks().then(setLocks); }, [load]);
 
@@ -84,6 +116,16 @@ function MembersInner() {
     load();
   }
 
+  const q = search.trim().toLowerCase();
+  const shown = q
+    ? members.filter((m) =>
+        m.name.toLowerCase().includes(q) ||
+        m.roll_no.toLowerCase().includes(q) ||
+        (m.email || "").toLowerCase().includes(q) ||
+        m.domains.some((d) => d.toLowerCase().includes(q))
+      )
+    : members;
+
   return (
     <main className="px-4 sm:px-6 py-8 max-w-4xl mx-auto">
       <h1 className="font-display text-3xl sm:text-4xl mb-2">Members</h1>
@@ -109,10 +151,12 @@ function MembersInner() {
         <p className="text-muted text-xs">Locking makes that section read-only for everyone, admins included. Applies instantly.</p>
       </div>
 
-      {Object.keys(stats).length > 0 && (
-        <div className="card overflow-x-auto mb-8">
-          <p className="px-5 pt-4 font-display text-xl">Selection stats</p>
-          <table className="w-full text-sm mt-2">
+      <Collapsible title="Interview stats" count={Object.keys(stats).length}
+        open={showIv} onToggle={() => setShowIv((v) => !v)}>
+        {Object.keys(stats).length === 0 ? (
+          <p className="px-5 py-6 text-muted italic text-sm">No completed interviews yet.</p>
+        ) : (
+          <table className="w-full text-sm">
             <thead>
               <tr className="text-muted text-xs uppercase tracking-wider border-b border-edge">
                 {["Member", "Interviews taken", "Time spent", "Avg interview"].map((h) => (
@@ -131,8 +175,38 @@ function MembersInner() {
               ))}
             </tbody>
           </table>
-        </div>
-      )}
+        )}
+      </Collapsible>
+
+      <Collapsible title="Task review stats" count={Object.keys(reviewStats).length}
+        open={showRv} onToggle={() => setShowRv((v) => !v)}>
+        {Object.keys(reviewStats).length === 0 ? (
+          <p className="px-5 py-6 text-muted italic text-sm">No task reviews submitted yet.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-muted text-xs uppercase tracking-wider border-b border-edge">
+                {["Member", "Reviews done", "With a score", "Avg score given"].map((h) => (
+                  <th key={h} className="px-5 py-2.5 text-left font-medium">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(reviewStats).sort((a, b) => b[1].count - a[1].count).map(([name, rv]) => (
+                <tr key={name} className="border-b border-edge/50">
+                  <td className="px-5 py-2.5 font-medium">{name}</td>
+                  <td className="px-5 py-2.5">{rv.count}</td>
+                  <td className="px-5 py-2.5 text-muted">{rv.scored}</td>
+                  <td className="px-5 py-2.5 text-muted">
+                    {rv.scored ? (rv.total / rv.scored).toFixed(1) : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Collapsible>
+      <div className="mb-8" />
 
       <form onSubmit={add} className="card p-5 mb-8 space-y-3 fade-up">
         <div className="grid sm:grid-cols-3 gap-3">
@@ -153,8 +227,20 @@ function MembersInner() {
         <button className="btn-gold text-sm">Add member</button>
       </form>
 
+      <div className="flex flex-wrap items-center gap-3 mb-3">
+        <input
+          className="input flex-1 min-w-[14rem]"
+          placeholder="Search members by name, roll, email or domain…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <span className="text-muted text-sm">
+          {shown.length}{shown.length !== members.length ? ` of ${members.length}` : ""} members
+        </span>
+      </div>
+
       <div className="card divide-y divide-edge/50">
-        {members.map((m) => (
+        {shown.map((m) => (
           <div key={m.roll_no} className="px-5 py-3">
             <div className="flex items-center gap-3">
               <div className="flex-1 min-w-0">
@@ -190,6 +276,9 @@ function MembersInner() {
           </div>
         ))}
         {members.length === 0 && <p className="px-5 py-8 text-muted italic text-center">No members yet — add the team above.</p>}
+        {members.length > 0 && shown.length === 0 && (
+          <p className="px-5 py-8 text-muted italic text-center">No member matches “{search}”.</p>
+        )}
       </div>
     </main>
   );

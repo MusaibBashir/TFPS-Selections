@@ -11,9 +11,9 @@ function ReviewInner() {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(null); // roll_no of open profile
   const [evalDraft, setEvalDraft] = useState({ score: "", feedback: "" });
-  const [sortBy, setSortBy] = useState("newest"); // newest | color | avg | tasks
+  const [sortBy, setSortBy] = useState("newest"); // newest | color | avg
   const [sortDir, setSortDir] = useState("desc");
-  const [onlyInterviewed, setOnlyInterviewed] = useState(false);
+  const [onlyTaskSubmitted, setOnlyTaskSubmitted] = useState(false);
   const [reviewedByMe, setReviewedByMe] = useState("");  // "" | "yes" | "no"
   const [taskEditing, setTaskEditing] = useState(true);
   const session = getSession();
@@ -51,10 +51,9 @@ function ReviewInner() {
   };
 
   const filtered = useMemo(() => rows.filter((r) => {
-    const ivTag = r.final_tag || r.interviews[0]?.tag;
-    if (filterTag && ivTag !== filterTag) return false;
+    if (filterTag && r.final_tag !== filterTag) return false;
     if (filterDomain && !r.domains.includes(filterDomain)) return false;
-    if (onlyInterviewed && r.interviews.length === 0) return false;
+    if (onlyTaskSubmitted && r.tasks.length === 0) return false;
     if (reviewedByMe) {
       const mine = session && r.evals.some((e) => e.evaluator === session.name);
       if (reviewedByMe === "yes" && !mine) return false;
@@ -69,8 +68,8 @@ function ReviewInner() {
     const dir = sortDir === "desc" ? 1 : -1;
     if (sortBy === "color") {
       const ord = { green: 0, yellow: 1, red: 2 };
-      const ta = ord[a.final_tag || a.interviews[0]?.tag] ?? 3;
-      const tb = ord[b.final_tag || b.interviews[0]?.tag] ?? 3;
+      const ta = ord[a.final_tag] ?? 3;
+      const tb = ord[b.final_tag] ?? 3;
       return (ta - tb) * dir;
     }
     if (sortBy === "avg") {
@@ -80,14 +79,11 @@ function ReviewInner() {
       if (ab == null) return -1;
       return (ab - aa) * dir;
     }
-    if (sortBy === "tasks") {
-      return ((b.tasks.length ? 1 : 0) - (a.tasks.length ? 1 : 0)) * dir;
-    }
     if (sortBy === "newest") {
       return (new Date(b.created_at) - new Date(a.created_at)) * dir;
     }
     return 0;
-  }), [rows, filterTag, filterDomain, search, sortBy, sortDir, onlyInterviewed, reviewedByMe, session]);
+  }), [rows, filterTag, filterDomain, search, sortBy, sortDir, onlyTaskSubmitted, reviewedByMe, session]);
 
   async function setFinalTag(roll_no, tag) {
     await supabase.from("candidates").update({ final_tag: tag }).eq("roll_no", roll_no);
@@ -107,7 +103,7 @@ function ReviewInner() {
   }
 
   function exportCSV(onlyGreen) {
-    const list = onlyGreen ? rows.filter((r) => (r.final_tag || r.interviews[0]?.tag) === "green") : filtered;
+    const list = onlyGreen ? rows.filter((r) => r.final_tag === "green") : filtered;
     const head = ["Roll No", "Name", "Hall", "Dept", "Email", "Phone", "Domains", "Hobbies", "Movie Loved", "Movie Hated", "On TFPS", "About", "Panel", "Panelists", "Interview Score", "Interview Tag", "Panelist Notes", "Tasks Assigned", "Task Links", "Avg Eval Score", "Final Tag"];
     const lines = list.map((r) => {
       const iv = r.interviews[0] || {};
@@ -126,7 +122,9 @@ function ReviewInner() {
   }
 
   const openRow = rows.find((r) => r.roll_no === open);
-  const effTag = (r) => r.final_tag || r.interviews[0]?.tag;
+  // Board colour reflects the FINAL tag only — an interview tag alone must not
+  // colour a card. Interview tags still show inside the profile modal.
+  const effTag = (r) => r.final_tag;
 
   return (
     <main className="px-4 sm:px-6 py-8 max-w-7xl mx-auto">
@@ -146,9 +144,9 @@ function ReviewInner() {
           <option value="">All domains</option>
           {DOMAINS.map((d) => <option key={d}>{d}</option>)}
         </select>
-        <button onClick={() => setOnlyInterviewed(!onlyInterviewed)}
-          className={`chip ${onlyInterviewed ? "border-gold bg-gold/15 text-gold" : "border-edge text-muted"}`}>
-          Interviewed
+        <button onClick={() => setOnlyTaskSubmitted(!onlyTaskSubmitted)}
+          className={`chip ${onlyTaskSubmitted ? "border-gold bg-gold/15 text-gold" : "border-edge text-muted"}`}>
+          Task submitted
         </button>
         <select className="input !w-auto" value={reviewedByMe} onChange={(e) => setReviewedByMe(e.target.value)}>
           <option value="">Reviewed by me: any</option>
@@ -166,7 +164,6 @@ function ReviewInner() {
           <option value="newest">Sort: Registered</option>
           <option value="color">Sort: Colour</option>
           <option value="avg">Sort: Avg score</option>
-          <option value="tasks">Sort: Task submitted</option>
         </select>
         <button className="btn-ghost !px-3 !py-2.5 text-sm" title="Flip sort direction"
           onClick={() => setSortDir(sortDir === "desc" ? "asc" : "desc")}>
