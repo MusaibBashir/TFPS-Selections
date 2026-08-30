@@ -139,6 +139,9 @@ function CanvasInner() {
   const masterList = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = cands.filter((r) => {
+      // Built in, not optional: Canvas only deals with people whose task has
+      // actually been reviewed by someone.
+      if (r.evals.length === 0) return false;
       if (unassignedOnly && r.set_id) return false;
       if (filterTag && r.final_tag !== filterTag) return false;
       if (filterDomain && !effDomains(r).includes(filterDomain)) return false;
@@ -323,10 +326,11 @@ function CanvasInner() {
           onDragOver={(e) => { e.preventDefault(); setDragOver("__none"); }}
           onDragLeave={() => setDragOver(null)}
           onDrop={(e) => onDrop(e, null)}>
-          <div className="flex items-center gap-2 mb-3">
+          <div className="flex items-baseline gap-2 mb-1">
             <h2 className="font-display text-xl flex-1">Master list</h2>
             <span className="text-muted text-xs">{masterList.length}</span>
           </div>
+          <p className="text-muted text-[11px] mb-3">Reviewed candidates only.</p>
           {/* selection may include people sitting in sets — this pulls them back out */}
           {selectedInSets > 0 && (
             <button className="btn-gold w-full text-xs !py-1.5 mb-2"
