@@ -64,3 +64,15 @@ export async function setLock(key, value) {
     { onConflict: "key" }
   );
 }
+
+// Admin-controlled selection phase. Stored as a boolean in the same settings
+// table: false (or missing) = interview mode, true = task review mode.
+export const MODE_KEY = "task_review_mode";
+export async function getMode() {
+  const { data } = await supabase
+    .from("app_settings").select("value").eq("key", MODE_KEY).maybeSingle();
+  return data?.value ? "task" : "interview";
+}
+export async function setMode(mode) {
+  await setLock(MODE_KEY, mode === "task");
+}

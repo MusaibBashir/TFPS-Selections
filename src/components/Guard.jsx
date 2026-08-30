@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { supabase, getSession, clearSession } from "@/lib/supabase";
+import { supabase, getSession, clearSession, getMode } from "@/lib/supabase";
 
 const NAV = [
   { href: "/distribute", label: "Distributor" },
@@ -17,6 +17,9 @@ export default function Guard({ children, admin = false }) {
   const [regCount, setRegCount] = useState(null);
   const [todayCount, setTodayCount] = useState(null);
   const [totalCount, setTotalCount] = useState(null);
+  const [mode, setMode] = useState("interview"); // interview | task
+  const [submittedCount, setSubmittedCount] = useState(null);
+  const [reviewedCount, setReviewedCount] = useState(null);
   const [panels, setPanels] = useState([]);
   const [mySeat, setMySeat] = useState(null); // my panelists row
   const router = useRouter();
@@ -32,18 +35,29 @@ export default function Guard({ children, admin = false }) {
   const loadSeat = useCallback(async (s) => {
     const dayStart = new Date();
     dayStart.setHours(0, 0, 0, 0);
-    const [p, seat, cnt, iv, ivAll] = await Promise.all([
+    const [p, seat, cnt, iv, ivAll, subs, evs, m] = await Promise.all([
       supabase.from("panels").select("*").neq("status", "closed").order("created_at"),
       supabase.from("panelists").select("*").eq("member_roll", s.roll_no).maybeSingle(),
       supabase.from("candidates").select("*", { count: "exact", head: true }),
       supabase.from("interviews").select("*", { count: "exact", head: true }).gte("ended_at", dayStart.toISOString()),
-      supabase.from("interviews").select("*", { count: "exact", head: true }).not("ended_at", "is", null)
+      supabase.from("interviews").select("*", { count: "exact", head: true }).not("ended_at", "is", null),
+      supabase.from("task_submissions").select("roll_no"),
+      supabase.from("evaluations").select("roll_no"),
+      getMode()
     ]);
     setPanels((p.data || []).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })));
     setMySeat(seat.data || null);
     setRegCount(cnt.count);
     setTodayCount(iv.count);
     setTotalCount(ivAll.count);
+    setMode(m);
+
+    // Count people, not rows — someone can submit or be reviewed more than once.
+    // "Reviewed" is measured against submitters so the two numbers are comparable.
+    const submitters = new Set((subs.data || []).map((r) => r.roll_no));
+    const reviewedSet = new Set((evs.data || []).map((r) => r.roll_no));
+    setSubmittedCount(submitters.size);
+    setReviewedCount([...submitters].filter((r) => reviewedSet.has(r)).length);
   }, []);
 
   useEffect(() => {
@@ -54,6 +68,9 @@ export default function Guard({ children, admin = false }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "panelists" }, () => loadSeat(session))
       .on("postgres_changes", { event: "*", schema: "public", table: "panels" }, () => loadSeat(session))
       .on("postgres_changes", { event: "*", schema: "public", table: "interviews" }, () => loadSeat(session))
+      .on("postgres_changes", { event: "*", schema: "public", table: "task_submissions" }, () => loadSeat(session))
+      .on("postgres_changes", { event: "*", schema: "public", table: "evaluations" }, () => loadSeat(session))
+      .on("postgres_changes", { event: "*", schema: "public", table: "app_settings" }, () => loadSeat(session))
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [session, loadSeat]);
@@ -89,15 +106,32 @@ export default function Guard({ children, admin = false }) {
           </Link>
         ))}
         <div className="flex-1" />
-        {todayCount != null && (
-          <span className="chip border-edge text-cream mr-2 whitespace-nowrap" title="Interviews completed today">
-            {todayCount} today
-          </span>
-        )}
-        {totalCount != null && session.role === "admin" && (
-          <span className="chip border-gold/40 text-gold mr-2 whitespace-nowrap" title="Total interviews completed">
-            {totalCount} interviews
-          </span>
+        {mode === "task" ? (
+          <>
+            {submittedCount != null && (
+              <span className="chip border-edge text-cream mr-2 whitespace-nowrap" title="Candidates who have submitted their task">
+                {submittedCount} submitted
+              </span>
+            )}
+            {reviewedCount != null && (
+              <span className="chip border-gold/40 text-gold mr-2 whitespace-nowrap" title="Submitted tasks reviewed by at least one member">
+                {reviewedCount} reviewed
+              </span>
+            )}
+          </>
+        ) : (
+          <>
+            {todayCount != null && (
+              <span className="chip border-edge text-cream mr-2 whitespace-nowrap" title="Interviews completed today">
+                {todayCount} today
+              </span>
+            )}
+            {totalCount != null && session.role === "admin" && (
+              <span className="chip border-gold/40 text-gold mr-2 whitespace-nowrap" title="Total interviews completed">
+                {totalCount} interviews
+              </span>
+            )}
+          </>
         )}
         {regCount != null && session.role === "admin" && (
           <span className="chip border-gold/40 text-gold mr-2 whitespace-nowrap" title="Total registrations">

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import Guard from "@/components/Guard";
-import { supabase, DOMAINS, getLocks, setLock } from "@/lib/supabase";
+import { supabase, DOMAINS, getLocks, setLock, getMode, setMode } from "@/lib/supabase";
 
 function fmtDur(ms) {
   if (!ms) return "—";
@@ -33,6 +33,7 @@ function MembersInner() {
   const [showRv, setShowRv] = useState(false);
   const [search, setSearch] = useState("");
   const [locks, setLocks] = useState({ interview: true, task: true });
+  const [mode, setModeState] = useState("interview"); // interview | task
   const [draft, setDraft] = useState({ roll_no: "", name: "", email: "", domains: [] });
   const [editing, setEditing] = useState(null); // roll_no being edited
   const [edit, setEdit] = useState({ email: "", domains: [] });
@@ -69,7 +70,13 @@ function MembersInner() {
     });
     setReviewStats(rv);
   }, []);
-  useEffect(() => { load(); getLocks().then(setLocks); }, [load]);
+  useEffect(() => { load(); getLocks().then(setLocks); getMode().then(setModeState); }, [load]);
+
+  async function toggleMode() {
+    const next = mode === "task" ? "interview" : "task";
+    setModeState(next);          // optimistic; header picks it up over realtime
+    await setMode(next);
+  }
 
   async function toggleLock(which) {
     const key = which === "interview" ? "panel_feedback_editing" : "task_review_editing";
@@ -130,6 +137,27 @@ function MembersInner() {
     <main className="px-4 sm:px-6 py-8 max-w-4xl mx-auto">
       <h1 className="font-display text-3xl sm:text-4xl mb-2">Members</h1>
       <p className="text-muted mb-4">Only these roll numbers can log in as panelist or admin.</p>
+
+      <div className="card p-5 mb-6 space-y-3">
+        <p className="font-display text-lg">Selection phase</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex-1 min-w-[220px]">
+            <p className="font-medium">{mode === "task" ? "Task review mode" : "Interview mode"}</p>
+            <p className="text-muted text-xs">
+              {mode === "task"
+                ? "Header shows task submissions and how many have been reviewed."
+                : "Header shows interviews done today and total interviews."}
+            </p>
+          </div>
+          <button onClick={toggleMode}
+            className={`btn !py-2 ${mode === "task"
+              ? "bg-gold/15 text-gold border border-gold/40"
+              : "bg-cream/10 text-cream border border-edge"}`}>
+            {mode === "task" ? "◆ Task review" : "● Interview"}
+          </button>
+        </div>
+        <p className="text-muted text-xs">Switches the counters in the top bar for everyone. Applies instantly.</p>
+      </div>
 
       <div className="card p-5 mb-6 space-y-4">
         <p className="font-display text-lg">Editing locks</p>

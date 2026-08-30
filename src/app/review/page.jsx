@@ -14,6 +14,7 @@ function ReviewInner() {
   const [sortBy, setSortBy] = useState("newest"); // newest | color | avg
   const [sortDir, setSortDir] = useState("desc");
   const [onlyTaskSubmitted, setOnlyTaskSubmitted] = useState(false);
+  const [onlyUnreviewed, setOnlyUnreviewed] = useState(false);
   const [reviewedByMe, setReviewedByMe] = useState("");  // "" | "yes" | "no"
   const [taskEditing, setTaskEditing] = useState(true);
   const session = getSession();
@@ -54,6 +55,9 @@ function ReviewInner() {
     if (filterTag && r.final_tag !== filterTag) return false;
     if (filterDomain && !r.domains.includes(filterDomain)) return false;
     if (onlyTaskSubmitted && r.tasks.length === 0) return false;
+    // Awaiting review = they submitted something, and nobody has evaluated it yet.
+    // (Someone who never submitted has nothing to review, so they stay out.)
+    if (onlyUnreviewed && (r.tasks.length === 0 || r.evals.length > 0)) return false;
     if (reviewedByMe) {
       const mine = session && r.evals.some((e) => e.evaluator === session.name);
       if (reviewedByMe === "yes" && !mine) return false;
@@ -83,7 +87,7 @@ function ReviewInner() {
       return (new Date(b.created_at) - new Date(a.created_at)) * dir;
     }
     return 0;
-  }), [rows, filterTag, filterDomain, search, sortBy, sortDir, onlyTaskSubmitted, reviewedByMe, session]);
+  }), [rows, filterTag, filterDomain, search, sortBy, sortDir, onlyTaskSubmitted, onlyUnreviewed, reviewedByMe, session]);
 
   async function setFinalTag(roll_no, tag) {
     await supabase.from("candidates").update({ final_tag: tag }).eq("roll_no", roll_no);
@@ -147,6 +151,11 @@ function ReviewInner() {
         <button onClick={() => setOnlyTaskSubmitted(!onlyTaskSubmitted)}
           className={`chip ${onlyTaskSubmitted ? "border-gold bg-gold/15 text-gold" : "border-edge text-muted"}`}>
           Task submitted
+        </button>
+        <button onClick={() => setOnlyUnreviewed(!onlyUnreviewed)}
+          title="Submitted a task that nobody has evaluated yet"
+          className={`chip ${onlyUnreviewed ? "border-gold bg-gold/15 text-gold" : "border-edge text-muted"}`}>
+          Awaiting review
         </button>
         <select className="input !w-auto" value={reviewedByMe} onChange={(e) => setReviewedByMe(e.target.value)}>
           <option value="">Reviewed by me: any</option>
