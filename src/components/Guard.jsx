@@ -9,7 +9,8 @@ const NAV = [
   { href: "/panels", label: "Panels", admin: true },
   { href: "/members", label: "Members", admin: true },
   { href: "/registrations", label: "Registrations", admin: true },
-  { href: "/review", label: "Review Board" }
+  { href: "/review", label: "Review Board" },
+  { href: "/canvas", label: "Canvas", admin: true }
 ];
 
 export default function Guard({ children, admin = false }) {
@@ -138,18 +139,23 @@ export default function Guard({ children, admin = false }) {
             {regCount} registered
           </span>
         )}
-        <select
-          className="bg-panel border border-edge rounded-lg text-xs text-cream px-2 py-1.5 mr-2 outline-none cursor-pointer max-w-[130px]"
-          value={mySeat?.panel_id || ""}
-          onChange={(e) => switchPanel(e.target.value)}
-          title="Your panel — switch anytime">
-          <option value="">No panel</option>
-          {panels.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-        {mySeat && (
-          <Link href={`/panel/${mySeat.panel_id}`} className="chip border-gold/40 text-gold mr-2 whitespace-nowrap hover:bg-gold/10">
-            My panel →
-          </Link>
+        {/* Panels are an interview-phase concern — hidden once we move to task review. */}
+        {mode !== "task" && (
+          <>
+            <select
+              className="bg-panel border border-edge rounded-lg text-xs text-cream px-2 py-1.5 mr-2 outline-none cursor-pointer max-w-[130px]"
+              value={mySeat?.panel_id || ""}
+              onChange={(e) => switchPanel(e.target.value)}
+              title="Your panel — switch anytime">
+              <option value="">No panel</option>
+              {panels.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            {mySeat && (
+              <Link href={`/panel/${mySeat.panel_id}`} className="chip border-gold/40 text-gold mr-2 whitespace-nowrap hover:bg-gold/10">
+                My panel →
+              </Link>
+            )}
+          </>
         )}
         <span className="chip border-edge text-muted mr-2 whitespace-nowrap hidden sm:inline-flex">
           {session.name} · {session.role}
