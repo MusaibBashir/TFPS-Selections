@@ -23,18 +23,23 @@ function download(name, head, lines) {
 // React see a new component type every render and remount all ~500 rows, which
 // breaks double-click detection mid-gesture and drags badly.
 function Person({ r, compact, selected, onToggle, onOpen, onDragStart, final, avg, adm, domains, overridden }) {
+  const note = (r.canvas_note || "").trim();
   return (
     <div
       draggable
       onDragStart={(e) => onDragStart(e, r.roll_no)}
       onClick={() => onToggle(r.roll_no)}
       onDoubleClick={(e) => { e.preventDefault(); onOpen(r.roll_no); }}
-      title="Click to select · double-click for full details · drag to a set"
+      title={note || "Click to select · double-click for full details · drag to a set"}
       className={`group rounded-xl border px-3 py-2 cursor-pointer transition-colors select-none ${
-        selected ? "border-gold bg-gold/15" : "border-edge bg-panel hover:border-gold/40"}`}>
+        selected ? "border-gold bg-gold/15"
+          : r.canvas_flag ? "border-yellow/50 bg-panel hover:border-yellow"
+          : "border-edge bg-panel hover:border-gold/40"}`}>
       <div className="flex items-center gap-2">
         <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
           style={{ background: DOT[r.final_tag] || "#2b2721" }} />
+        {r.canvas_flag && <span className="text-yellow text-xs shrink-0" title={note || "Flagged"}>⚠</span>}
+        {!r.canvas_flag && note && <span className="text-muted text-xs shrink-0" title={note}>✎</span>}
         <span className="font-medium text-sm truncate flex-1">{r.name}</span>
         <button onClick={(e) => { e.stopPropagation(); onOpen(r.roll_no); }}
           className="text-muted hover:text-gold text-xs opacity-60 hover:opacity-100 shrink-0"
@@ -75,6 +80,7 @@ function CanvasInner() {
   const [filterTag, setFilterTag] = useState("");
   const [filterDomain, setFilterDomain] = useState("");
   const [unassignedOnly, setUnassignedOnly] = useState(true);
+  const [flaggedOnly, setFlaggedOnly] = useState(false);
   const [sortBy, setSortBy] = useState("name");   // name | avg | admin | final | colour
   const [sortDir, setSortDir] = useState("asc");
 
@@ -145,6 +151,7 @@ function CanvasInner() {
       // actually been reviewed by someone.
       if (r.evals.length === 0) return false;
       if (unassignedOnly && r.set_id) return false;
+      if (flaggedOnly && !r.canvas_flag) return false;
       if (filterTag && r.final_tag !== filterTag) return false;
       if (filterDomain && !effDomains(r).includes(filterDomain)) return false;
       if (q && !r.name.toLowerCase().includes(q) && !r.roll_no.toLowerCase().includes(q)) return false;
@@ -172,7 +179,7 @@ function CanvasInner() {
       }
       return a.name.localeCompare(b.name) * (sortDir === "asc" ? 1 : -1);
     });
-  }, [cands, search, filterTag, filterDomain, unassignedOnly, sortBy, sortDir, avgAll, avgAdmin, finalOf]);
+  }, [cands, search, filterTag, filterDomain, unassignedOnly, flaggedOnly, sortBy, sortDir, avgAll, avgAdmin, finalOf]);
 
   // highest-first makes sense for scores, A→Z for names
   function changeSort(next) {
@@ -247,13 +254,14 @@ function CanvasInner() {
 
   function exportPartial(list, file) {
     const head = ["Set", "Roll No", "Name", "Phone", "Domain", "Interview Score", "Interview Colour",
-      "Task Reviews", "Avg Score", "Admin Avg", "Task Score", "Task Link", "Final Colour"];
+      "Task Reviews", "Avg Score", "Admin Avg", "Task Score", "Task Link", "Final Colour", "Flagged", "Note"];
     const lines = list.map((r) => {
       const iv = r.interviews[0] || {};
       const links = r.tasks.flatMap((t) => (t.links || []).map((l) => l.url)).join(" | ");
       return [setName(r.set_id), r.roll_no, r.name, r.phone, effDomains(r).join("; "),
         iv.score ?? "", iv.tag || "", r.evals.length, num(avgAll(r)), num(avgAdmin(r)),
-        num(finalOf(r)), links, r.final_tag || ""].map(csvCell).join(",");
+        num(finalOf(r)), links, r.final_tag || "",
+        r.canvas_flag ? "yes" : "", r.canvas_note || ""].map(csvCell).join(",");
     });
     download(file, head, lines);
   }
@@ -264,7 +272,8 @@ function CanvasInner() {
       "On TFPS", "About", "Portfolio", "Registered At", "Status",
       "Panel", "Panelists", "Interview Score", "Interview Colour", "Interview Feedback",
       "Panelist Notes", "Tasks Assigned", "Task Links", "Task Notes",
-      "Task Reviews", "Review Detail", "Avg Score", "Admin Avg", "Final Score", "Final Score Source", "Final Colour"];
+      "Task Reviews", "Review Detail", "Avg Score", "Admin Avg", "Final Score", "Final Score Source", "Final Colour",
+      "Flagged", "Note"];
     const lines = list.map((r) => {
       const iv = r.interviews[0] || {};
       const notes = r.ivNotes.map((n) => `${n.panelist}${n.score != null ? ` (${n.score}/10)` : ""}: ${n.feedback || ""}`).join(" | ");
@@ -278,7 +287,8 @@ function CanvasInner() {
         iv.panel_name || "", (iv.panelist_names || []).join("; "), iv.score ?? "", iv.tag || "", iv.feedback || "",
         notes, iv.tasks_assigned || "", links, tnotes,
         r.evals.length, revs, num(avgAll(r)), num(avgAdmin(r)), num(finalOf(r)),
-        r.final_score_src || "avg", r.final_tag || ""].map(csvCell).join(",");
+        r.final_score_src || "avg", r.final_tag || "",
+        r.canvas_flag ? "yes" : "", r.canvas_note || ""].map(csvCell).join(",");
     });
     download(file, head, lines);
   }
@@ -363,6 +373,10 @@ function CanvasInner() {
             <button onClick={() => setUnassignedOnly((v) => !v)}
               className={`chip text-[11px] ${unassignedOnly ? "border-gold bg-gold/15 text-gold" : "border-edge text-muted"}`}>
               Unassigned only
+            </button>
+            <button onClick={() => setFlaggedOnly((v) => !v)} title="Only people carrying a warning flag"
+              className={`chip text-[11px] ${flaggedOnly ? "border-yellow/50 bg-yellow/15 text-yellow" : "border-edge text-muted"}`}>
+              ⚠ Flagged
             </button>
           </div>
           <select className="input !py-2 text-sm mb-2" value={filterDomain} onChange={(e) => setFilterDomain(e.target.value)}>
@@ -595,6 +609,27 @@ function CanvasInner() {
                   })} />
               )}
             </div>
+
+            {/* canvas note + warning flag */}
+            <div className="flex items-center gap-2 mt-5 mb-2">
+              <h3 className="font-display text-lg flex-1">Note</h3>
+              <button
+                onClick={() => patch(openRow.roll_no, { canvas_flag: !openRow.canvas_flag })}
+                className={`chip ${openRow.canvas_flag
+                  ? "border-yellow/50 bg-yellow/15 text-yellow" : "border-edge text-muted hover:text-cream"}`}>
+                ⚠ {openRow.canvas_flag ? "Flagged" : "Flag"}
+              </button>
+            </div>
+            <textarea
+              key={openRow.roll_no}
+              className="input min-h-[70px] text-sm"
+              placeholder="Anything to remember about this person while picking the final list…"
+              defaultValue={openRow.canvas_note || ""}
+              onBlur={(e) => {
+                const v = e.target.value.trim();
+                if (v !== (openRow.canvas_note || "")) patch(openRow.roll_no, { canvas_note: v || null });
+              }} />
+            <p className="text-muted text-[11px] mt-1">Saved when you click away. Shows as ⚠ or ✎ on their card.</p>
 
             {/* final colour */}
             <div className="flex items-center gap-2 mt-4">
