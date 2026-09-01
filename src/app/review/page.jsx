@@ -15,6 +15,7 @@ function ReviewInner() {
   const [sortDir, setSortDir] = useState("desc");
   const [onlyTaskSubmitted, setOnlyTaskSubmitted] = useState(false);
   const [onlyUnreviewed, setOnlyUnreviewed] = useState(false);
+  const [interviewedByMe, setInterviewedByMe] = useState(false);
   const [reviewedByMe, setReviewedByMe] = useState("");  // "" | "yes" | "no"
   const [taskEditing, setTaskEditing] = useState(true);
   const session = getSession();
@@ -58,6 +59,12 @@ function ReviewInner() {
     // Awaiting review = they submitted something, and nobody has evaluated it yet.
     // (Someone who never submitted has nothing to review, so they stay out.)
     if (onlyUnreviewed && (r.tasks.length === 0 || r.evals.length > 0)) return false;
+    // "Interviewed by me" = I was on the panel that sat this interview, which is
+    // recorded as a snapshot of panelist names on the interview row itself.
+    if (interviewedByMe) {
+      const mine = session && r.interviews.some((iv) => (iv.panelist_names || []).includes(session.name));
+      if (!mine) return false;
+    }
     if (reviewedByMe) {
       const mine = session && r.evals.some((e) => e.evaluator === session.name);
       if (reviewedByMe === "yes" && !mine) return false;
@@ -76,6 +83,12 @@ function ReviewInner() {
       const tb = ord[b.final_tag] ?? 3;
       return (ta - tb) * dir;
     }
+    if (sortBy === "ivcolour") {
+      const ord = { green: 0, yellow: 1, red: 2 };
+      const ta = ord[a.interviews[0]?.tag] ?? 3;
+      const tb = ord[b.interviews[0]?.tag] ?? 3;
+      return (ta - tb) * dir;
+    }
     if (sortBy === "avg") {
       const aa = avgOf(a), ab = avgOf(b);
       if (aa == null && ab == null) return 0;
@@ -87,7 +100,7 @@ function ReviewInner() {
       return (new Date(b.created_at) - new Date(a.created_at)) * dir;
     }
     return 0;
-  }), [rows, filterTag, filterDomain, search, sortBy, sortDir, onlyTaskSubmitted, onlyUnreviewed, reviewedByMe, session]);
+  }), [rows, filterTag, filterDomain, search, sortBy, sortDir, onlyTaskSubmitted, onlyUnreviewed, interviewedByMe, reviewedByMe, session]);
 
   async function setFinalTag(roll_no, tag) {
     await supabase.from("candidates").update({ final_tag: tag }).eq("roll_no", roll_no);
@@ -157,6 +170,11 @@ function ReviewInner() {
           className={`chip ${onlyUnreviewed ? "border-gold bg-gold/15 text-gold" : "border-edge text-muted"}`}>
           Awaiting review
         </button>
+        <button onClick={() => setInterviewedByMe(!interviewedByMe)}
+          title="Candidates interviewed by a panel I was sitting on"
+          className={`chip ${interviewedByMe ? "border-gold bg-gold/15 text-gold" : "border-edge text-muted"}`}>
+          Interviewed by me
+        </button>
         <select className="input !w-auto" value={reviewedByMe} onChange={(e) => setReviewedByMe(e.target.value)}>
           <option value="">Reviewed by me: any</option>
           <option value="yes">Reviewed by me</option>
@@ -171,7 +189,8 @@ function ReviewInner() {
         <span className="flex-1" />
         <select className="input !w-auto" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
           <option value="newest">Sort: Registered</option>
-          <option value="color">Sort: Colour</option>
+          <option value="color">Sort: Final colour</option>
+          <option value="ivcolour">Sort: Interview colour</option>
           <option value="avg">Sort: Avg score</option>
         </select>
         <button className="btn-ghost !px-3 !py-2.5 text-sm" title="Flip sort direction"

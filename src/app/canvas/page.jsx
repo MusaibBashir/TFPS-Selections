@@ -69,6 +69,7 @@ function CanvasInner() {
   const [infoSet, setInfoSet] = useState(null);  // set id whose breakdown is expanded
   const [dragOver, setDragOver] = useState(null);
   const [exportKind, setExportKind] = useState(null); // null | 'partial' | 'full'
+  const [setDomFilter, setSetDomFilter] = useState({}); // { [setId]: [domain, ...] }
 
   const [search, setSearch] = useState("");
   const [filterTag, setFilterTag] = useState("");
@@ -396,6 +397,15 @@ function CanvasInner() {
           {sets.map((s) => {
             const list = bySet[s.id] || [];
             const b = breakdown(list);
+            // clicking domains in the breakdown narrows the set to those domains
+            const domSel = setDomFilter[s.id] || [];
+            const shown = domSel.length
+              ? list.filter((r) => effDomains(r).some((d) => domSel.includes(d)))
+              : list;
+            const toggleDom = (d) => setSetDomFilter((f) => {
+              const cur = f[s.id] || [];
+              return { ...f, [s.id]: cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d] };
+            });
             return (
               <div key={s.id}
                 onDragOver={(e) => { e.preventDefault(); setDragOver(s.id); }}
@@ -404,7 +414,9 @@ function CanvasInner() {
                 className={`card p-4 transition-colors ${dragOver === s.id ? "border-gold" : ""}`}>
                 <div className="flex items-center gap-2">
                   <h3 className="font-display text-lg flex-1 truncate">{s.name}</h3>
-                  <span className="chip border-edge text-muted text-[10px]">{list.length}</span>
+                  <span className={`chip text-[10px] ${domSel.length ? "border-gold/40 text-gold" : "border-edge text-muted"}`}>
+                    {domSel.length ? `${shown.length}/${list.length}` : list.length}
+                  </span>
                   <button className="text-muted hover:text-gold text-xs"
                     onClick={() => setInfoSet(infoSet === s.id ? null : s.id)} title="Breakdown">ⓘ</button>
                   <button className="text-muted hover:text-gold text-xs" onClick={() => renameSet(s)} title="Rename">✎</button>
@@ -430,32 +442,53 @@ function CanvasInner() {
                       </div>
                     </div>
                     <div>
-                      <p className="text-muted mb-1">Domains <span className="opacity-70">(counted in each)</span></p>
+                      <div className="flex items-baseline gap-2 mb-1">
+                        <p className="text-muted flex-1">
+                          Domains <span className="opacity-70">(counted in each · click to filter)</span>
+                        </p>
+                        {domSel.length > 0 && (
+                          <button className="text-muted hover:text-cream"
+                            onClick={() => setSetDomFilter((f) => ({ ...f, [s.id]: [] }))}>clear</button>
+                        )}
+                      </div>
                       <div className="flex flex-wrap gap-1.5">
-                        {Object.entries(b.dom).sort((x, y) => y[1] - x[1]).map(([d, n]) => (
-                          <span key={d} className="chip text-[10px] border-gold/30 text-gold/90">{d} {n}</span>
-                        ))}
+                        {Object.entries(b.dom).sort((x, y) => y[1] - x[1]).map(([d, n]) => {
+                          const on = domSel.includes(d);
+                          return (
+                            <button key={d} onClick={() => toggleDom(d)}
+                              className={`chip text-[10px] transition-colors ${on
+                                ? "border-gold bg-gold/20 text-gold"
+                                : "border-gold/30 text-gold/90 hover:border-gold/60"}`}>
+                              {d} {n}
+                            </button>
+                          );
+                        })}
                         {Object.keys(b.dom).length === 0 && <span className="text-muted italic">none</span>}
                       </div>
                     </div>
                     <div className="flex gap-2 pt-1">
                       <button className="text-gold/80 hover:text-gold"
-                        onClick={() => exportPartial(list, `tfps-${s.name.replace(/\W+/g, "-").toLowerCase()}-partial.csv`)}>
-                        export partial
+                        onClick={() => exportPartial(shown, `tfps-${s.name.replace(/\W+/g, "-").toLowerCase()}-partial.csv`)}>
+                        export partial{domSel.length ? ` (${shown.length})` : ""}
                       </button>
                       <button className="text-gold/80 hover:text-gold"
-                        onClick={() => exportFull(list, `tfps-${s.name.replace(/\W+/g, "-").toLowerCase()}-full.csv`)}>
-                        export full
+                        onClick={() => exportFull(shown, `tfps-${s.name.replace(/\W+/g, "-").toLowerCase()}-full.csv`)}>
+                        export full{domSel.length ? ` (${shown.length})` : ""}
                       </button>
                     </div>
                   </div>
                 )}
 
                 <div className="space-y-1.5 mt-3 min-h-[80px] max-h-[52vh] overflow-y-auto pr-1">
-                  {list.map((r) => <Person key={r.roll_no} {...chip(r)} compact />)}
+                  {shown.map((r) => <Person key={r.roll_no} {...chip(r)} compact />)}
                   {list.length === 0 && (
                     <p className="text-muted text-xs italic py-6 text-center">
                       Drag people here, or select and press Move.
+                    </p>
+                  )}
+                  {list.length > 0 && shown.length === 0 && (
+                    <p className="text-muted text-xs italic py-6 text-center">
+                      Nobody in this set matches {domSel.join(" or ")}.
                     </p>
                   )}
                 </div>
