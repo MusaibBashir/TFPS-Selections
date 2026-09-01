@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Guard from "@/components/Guard";
-import { supabase, tagColor, DOMAINS } from "@/lib/supabase";
+import { supabase, tagColor, DOMAINS, girlsHallCode, HALL_NAMES } from "@/lib/supabase";
 
 const DOT = { green: "#4ade80", yellow: "#facc15", red: "#f87171" };
 
@@ -241,12 +241,16 @@ function CanvasInner() {
   // ---- set breakdown --------------------------------------------------
   function breakdown(list) {
     const dom = {}, col = { green: 0, yellow: 0, red: 0, untagged: 0 };
+    const girls = {};
+    let girlsTotal = 0;
     list.forEach((r) => {
       // someone tagged photography AND writing counts under both
       effDomains(r).forEach((d) => { dom[d] = (dom[d] || 0) + 1; });
       col[r.final_tag || "untagged"] += 1;
+      const g = girlsHallCode(r.hall);
+      if (g) { girls[g] = (girls[g] || 0) + 1; girlsTotal += 1; }
     });
-    return { dom, col };
+    return { dom, col, girls, girlsTotal };
   }
 
   // ---- export ---------------------------------------------------------
@@ -453,6 +457,19 @@ function CanvasInner() {
                           <span key={t} className={`chip text-[10px] capitalize ${tagColor(t)}`}>{t} {b.col[t]}</span>
                         ))}
                         <span className="chip text-[10px] border-edge text-muted">untagged {b.col.untagged}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-muted mb-1">Girls <span className="opacity-70">(by hall)</span></p>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="chip text-[10px] border-gold/40 text-gold">
+                          {b.girlsTotal} of {list.length}
+                        </span>
+                        {Object.entries(b.girls).sort((x, y) => y[1] - x[1]).map(([h, n]) => (
+                          <span key={h} title={HALL_NAMES[h] || h}
+                            className="chip text-[10px] border-edge text-muted">{h} {n}</span>
+                        ))}
+                        {b.girlsTotal === 0 && <span className="text-muted italic">none</span>}
                       </div>
                     </div>
                     <div>

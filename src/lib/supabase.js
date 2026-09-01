@@ -22,6 +22,52 @@ export const HALLS = [
   "SBP1", "SBP2", "VS", "ZH", "Other"
 ];
 
+// ---------------------------------------------------------------------------
+// Girls' halls. Hall values are messy — the website form stores codes ("SNVH")
+// while the Google Form stored full names ("Sister Nivedita (SNVH) Hall"), so
+// both have to resolve to the same hall.
+//
+// Matching is on whole tokens, never substrings: "MT" must not match "MMM", and
+// "MS" (Megnad Saha) must never come out as a girls' hall.
+const GIRLS_CODES = ["SNVH", "MT", "SNIG", "IGH", "VGH"];
+const GIRLS_PHRASES = [
+  ["SISTER NIVEDITA", "SNVH"],
+  ["MOTHER TERESA", "MT"],
+  ["INDIRA GANDHI", "IGH"],
+  ["SAVITRIBAI PHULE", "SBP"],
+  ["SAROJINI NAIDU", "SNIG"]
+];
+
+// Full names for the codes we can state with confidence; used as tooltips.
+export const HALL_NAMES = {
+  SNVH: "Sister Nivedita Hall",
+  MT: "Mother Teresa Hall",
+  IGH: "Indira Gandhi Hall",
+  SBP: "Savitribai Phule Hall",
+  SBP1: "Savitribai Phule Hall I",
+  SBP2: "Savitribai Phule Hall II",
+  SBPI: "Savitribai Phule Hall I",
+  SBPII: "Savitribai Phule Hall II"
+};
+
+/** Returns the girls' hall code for a hall string, or null if it isn't one. */
+export function girlsHallCode(hall) {
+  if (!hall) return null;
+  const norm = String(hall).toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
+  if (!norm) return null;
+  for (const [phrase, code] of GIRLS_PHRASES) if (norm.includes(phrase)) return code;
+  for (const t of norm.split(" ")) {
+    if (GIRLS_CODES.includes(t)) return t;
+    // SBP, SBP1, SBP2, SBP-I, SBP-II all normalise to a token starting SBP
+    if (/^SBP(\d+|I+)?$/.test(t)) return t;
+  }
+  return null;
+}
+
+export function isGirlsHall(hall) {
+  return girlsHallCode(hall) !== null;
+}
+
 export function tagColor(tag) {
   if (tag === "green") return "text-green border-green/40 bg-green/10";
   if (tag === "yellow") return "text-yellow border-yellow/40 bg-yellow/10";
